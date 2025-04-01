@@ -15,7 +15,8 @@
   "version": "1.0.0",
   "main": "dist/webrtcperf.js",
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "license": "AGPL-3.0-or-later",
   "devDependencies": {

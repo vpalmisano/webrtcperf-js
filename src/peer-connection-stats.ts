@@ -1,46 +1,68 @@
-/* global webrtcperf */
+import { overrides, log } from './common'
+import {
+  connectionTimer,
+  PeerConnections,
+  peerConnectionsClosed,
+  peerConnectionsConnected,
+  peerConnectionsCreated,
+  peerConnectionsDelayStats,
+  peerConnectionsDisconnected,
+  peerConnectionsFailed,
+} from './peer-connection'
 
-const PeerConnections = new Map()
-const TrackStats = new Map()
-const TrackStatsKeys = []
+export const signalingHost = ''
 
-window.isRecvTrackEnabled = (track) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const TrackStats = new Map<string, { t: number; values: any }>()
+const TrackStatsKeys: string[] = []
+
+function isRecvTrackEnabled(track: MediaStreamTrack) {
   return track.enabled
 }
 
-const filterUndefined = (o) =>
-  Object.fromEntries(
+function filterUndefined(o: Record<string, number | string | undefined>) {
+  return Object.fromEntries(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    Object.entries(o).filter(([_, v]) => typeof v === 'string' || isFinite(v)),
+    Object.entries(o).filter(([_, v]) => v !== undefined && (typeof v === 'string' || isFinite(v))),
   )
+}
 
-const sumOptional = (a, b, prop) => {
+function sumOptional(a: Record<string, number>, b: Record<string, number>, prop: string) {
   a[prop] = (a[prop] || 0) + (b[prop] || 0)
 }
 
-const maxOptional = (a, b, prop) => {
+function maxOptional(a: Record<string, number>, b: Record<string, number>, prop: string) {
   a[prop] = Math.max(a[prop] || 0, b[prop] || 0)
 }
 
-const calculateBitrate = (cur, old, timeDiff, fallback = 0) =>
-  cur > 0 && old > 0 && cur >= old ? Math.round((8000 * (cur - old)) / timeDiff) : fallback
+function calculateBitrate(cur: number, old: number, timeDiff: number, fallback = 0) {
+  return cur > 0 && old > 0 && cur >= old ? Math.round((8000 * (cur - old)) / timeDiff) : fallback
+}
 
-const calculateRate = (diff, timeDiff, fallback = 0) => (diff > 0 ? (1000 * diff) / timeDiff : fallback)
+function calculateRate(diff: number, timeDiff: number, fallback = 0) {
+  return diff > 0 ? (1000 * diff) / timeDiff : fallback
+}
 
-const positiveDiff = (cur, old) => Math.max(0, (cur || 0) - (old || 0))
+function positiveDiff(cur: number, old: number) {
+  return Math.max(0, (cur || 0) - (old || 0))
+}
 
-const calculateLossRate = (lost, total) => (total > 0 ? (100 * lost) / total : undefined)
+function calculateLossRate(lost: number, total: number) {
+  return total > 0 ? (100 * lost) / total : undefined
+}
 
-const calculateJitterBuffer = (jitterBufferDelay, count) => (count > 0 ? jitterBufferDelay / count : undefined)
+function calculateJitterBuffer(jitterBufferDelay: number, count: number) {
+  return count > 0 ? jitterBufferDelay / count : undefined
+}
 
 /**
- * updateTrackStats
+ * Update the track stats.
  * @param {string} trackId
  * @param {MediaStreamTrack} track
  * @param {number} t
  * @param {any} values
  */
-const updateTrackStats = (trackId, track, t, values) => {
+function updateTrackStats(trackId: string, track: MediaStreamTrack, t: number, values: Record<string, unknown>) {
   const isNew = !TrackStats.has(trackId)
   TrackStats.set(trackId, { t, values })
   // Update ordered array.
@@ -72,12 +94,12 @@ const updateTrackStats = (trackId, track, t, values) => {
  * @param {raw} verbose
  * @param {boolean} verbose
  */
-async function getPeerConnectionStats(id, pc, now, raw = false, verbose = false) {
-  // webrtcperf.log('getPeerConnectionStats', id, pc);
-  const ret = {}
+async function getPeerConnectionStats(id: number, pc: RTCPeerConnection, now: number, raw = false, verbose = false) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ret: Record<string, any> = {}
   const transceivers = pc.getTransceivers().filter((t) => t && t.mid !== 'probator')
   if (verbose) {
-    webrtcperf.log('getPeerConnectionStats', { id, pc, transceivers })
+    log('getPeerConnectionStats', { id, pc, transceivers })
   }
   for (const t of transceivers) {
     // outbound
@@ -89,10 +111,19 @@ async function getPeerConnectionStats(id, pc, now, raw = false, verbose = false)
         const stats = await pc.getStats(track)
         const values = {
           enabled: track.enabled && (track.kind === 'audio' || encodings.length > 0),
-          outboundRtp: {},
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          outboundRtp: {} as any,
+          isDisplay: false,
+          videoSentActiveEncodings: 0,
+          sentMaxBitrate: undefined as number | undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          raw: undefined as any,
+          codec: '',
+          availableOutgoingBitrate: 0,
+          remoteAddress: '',
         }
         if (track.kind === 'video') {
-          values.isDisplay = webrtcperf.isSenderDisplayTrack(track)
+          values.isDisplay = overrides.isSenderDisplayTrack(track)
           values.videoSentActiveEncodings = encodings.length
         }
         values.sentMaxBitrate = encodings.length
@@ -104,9 +135,9 @@ async function getPeerConnectionStats(id, pc, now, raw = false, verbose = false)
         for (const s of stats.values()) {
           if (raw) {
             if (!values.raw) {
-              values.raw = { encodings, stats: [] }
+              values.raw = { encodings, stats: {} }
             }
-            values.raw.stats.push(s)
+            values.raw.stats[s.type] = s
           }
           if (s.type === 'codec') {
             values.codec = s.mimeType.split('/')[1].toLowerCase()
@@ -261,7 +292,7 @@ async function getPeerConnectionStats(id, pc, now, raw = false, verbose = false)
           }
           values.outboundRtp = filterUndefined(values.outboundRtp)
           if (verbose) {
-            webrtcperf.log(`Track ${track.id} (${track.kind}): ${JSON.stringify(values.outboundRtp, null, 2)}`)
+            log(`Track ${track.id} (${track.kind}): ${JSON.stringify(values.outboundRtp, null, 2)}`)
           }
           ret[trackId] = values
           updateTrackStats(trackId, track, now, values)
@@ -272,21 +303,30 @@ async function getPeerConnectionStats(id, pc, now, raw = false, verbose = false)
     if (t.receiver && t.receiver.track) {
       const track = t.receiver.track
       if (track) {
-        const trackId = webrtcperf.getReceiverParticipantName(track)
+        const trackId = overrides.getReceiverParticipantName(track)
         const stats = await pc.getStats(track)
         const values = {
-          enabled: window.isRecvTrackEnabled(track),
-          inboundRtp: {},
+          enabled: isRecvTrackEnabled(track),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          inboundRtp: {} as any,
+          isDisplay: false,
+          videoReceivedActiveEncodings: 0,
+          receivedMaxBitrate: undefined as number | undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          raw: undefined as any,
+          codec: '',
+          availableIncomingBitrate: 0,
+          remoteAddress: '',
         }
         if (track.kind === 'video') {
-          values.isDisplay = webrtcperf.isReceiverDisplayTrack(track)
+          values.isDisplay = overrides.isReceiverDisplayTrack(track)
         }
         for (const s of stats.values()) {
           if (raw) {
             if (!values.raw) {
-              values.raw = [{ contributingSources: t.receiver.getContributingSources() }]
+              values.raw = { contributingSources: t.receiver.getContributingSources(), stats: {} }
             }
-            values.raw.push(s)
+            values.raw.stats[s.type] = s
           }
           if (s.type === 'codec') {
             values.codec = s.mimeType.split('/')[1].toLowerCase()
@@ -417,7 +457,7 @@ async function getPeerConnectionStats(id, pc, now, raw = false, verbose = false)
           }
           values.inboundRtp = filterUndefined(values.inboundRtp)
           if (verbose) {
-            webrtcperf.log(`Track ${track.id} (${track.kind}): ${JSON.stringify(values.inboundRtp, null, 2)}`)
+            log(`Track ${track.id} (${track.kind}): ${JSON.stringify(values.inboundRtp, null, 2)}`)
           }
           ret[trackId] = values
           updateTrackStats(trackId, track, now, values)
@@ -440,7 +480,7 @@ setInterval(() => {
     }
     const timeDiff = now - item.t
     if (timeDiff > TRACK_STATS_TIMEOUT) {
-      // webrtcperf.log(`remove ${trackId} (updated ${timeDiff / 1000}s ago)`)
+      // log(`remove ${trackId} (updated ${timeDiff / 1000}s ago)`)
       TrackStats.delete(trackId)
       TrackStatsKeys.splice(index, 1)
     } else {
@@ -450,39 +490,11 @@ setInterval(() => {
 }, TRACK_STATS_TIMEOUT)
 
 /**
- * isSenderDisplayTrack
- * @param {MediaStreamTrack} track
- * @return {Boolean}
- */
-webrtcperf.isSenderDisplayTrack = (track) => {
-  if (track.kind !== 'video') return false
-
-  if (['detail', 'text'].indexOf(track.contentHint) !== -1) return true
-  if (track instanceof window.BrowserCaptureMediaStreamTrack) return true
-
-  const trackSettings = track.getSettings()
-  const trackConstraints = track.getConstraints()
-
-  //webrtcperf.log(`isSenderDisplayTrack`, { track, trackSettings, trackConstraints })
-  if (trackConstraints?.mediaSource !== undefined) {
-    return trackConstraints.mediaSource === 'window' || trackConstraints.mediaSource === 'screen'
-  } else if (trackSettings.displaySurface || trackSettings.logicalSurface) {
-    return true
-  } else {
-    return !trackSettings.deviceId
-  }
-}
-
-webrtcperf.isReceiverDisplayTrack = (track) => {
-  return webrtcperf.isSenderDisplayTrack(track)
-}
-
-/**
  * collectPeerConnectionStats
  * @param {boolean} verbose
  * @return {Object}
  */
-webrtcperf.collectPeerConnectionStats = async (raw = false, verbose = false) => {
+export async function collectPeerConnectionStats(raw = false, verbose = false) {
   const stats = []
   const now = Date.now()
   let activePeerConnections = 0
@@ -497,25 +509,22 @@ webrtcperf.collectPeerConnectionStats = async (raw = false, verbose = false) => 
         stats.push(ret)
       }
     } catch (err) {
-      webrtcperf.log(`getPeerConnectionStats error: ${err.message}`, err)
+      log(`getPeerConnectionStats error: ${err instanceof Error ? err.message : String(err)}`, err)
     }
   }
-
-  // TODO move to custom metrics.
-  const signalingHost = window.signalingHost
 
   return {
     stats,
     signalingHost,
-    participantName: webrtcperf.getParticipantName(),
+    participantName: overrides.getParticipantName(),
     activePeerConnections,
-    peerConnectionConnectionTime: webrtcperf.connectionTimer.onDuration,
-    peerConnectionDisconnectionTime: webrtcperf.connectionTimer.offDuration,
-    peerConnectionsCreated: webrtcperf.peerConnectionsCreated,
-    peerConnectionsConnected: webrtcperf.peerConnectionsConnected,
-    peerConnectionsDisconnected: webrtcperf.peerConnectionsDisconnected,
-    peerConnectionsFailed: webrtcperf.peerConnectionsFailed,
-    peerConnectionsClosed: webrtcperf.peerConnectionsClosed,
-    peerConnectionsDelay: webrtcperf.peerConnectionsDelayStats.mean(),
+    peerConnectionConnectionTime: connectionTimer.onDuration,
+    peerConnectionDisconnectionTime: connectionTimer.offDuration,
+    peerConnectionsCreated,
+    peerConnectionsConnected,
+    peerConnectionsDisconnected,
+    peerConnectionsFailed,
+    peerConnectionsClosed,
+    peerConnectionsDelay: peerConnectionsDelayStats.mean(),
   }
 }

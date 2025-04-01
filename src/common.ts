@@ -1,6 +1,21 @@
+import { FakeScreenshareParams } from './screenshare'
+
 declare global {
   interface Window {
+    webrtcperf?: {
+      config: typeof config
+      params: typeof params
+    }
     serializedConsoleLog: (method: string, msg: string) => void
+    webrtcperf_keyPress: (key: string) => Promise<void>
+    webrtcperf_keypressText: (selector: string, text: string) => Promise<void>
+    webrtcperf_startFakeScreenshare: () => Promise<void>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    MediaStreamTrackProcessor: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    MediaStreamTrackGenerator: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    BrowserCaptureMediaStreamTrack: any
   }
 }
 
@@ -14,20 +29,121 @@ type Action = {
   relaxedAt: number
 }
 
-const startTime = performance.now()
+export type EnableValue = boolean | string | number
 
-export const webrtcperf = {
+export const config = {
+  START_TIMESTAMP: Date.now(),
   WEBRTC_PERF_INDEX: 0,
-  LOCAL_STORAGE: '',
-  params: {
-    actions: [] as Action[],
-  },
-  elapsedTime: () => performance.now() - startTime,
+  WEBRTC_PERF_URL: '',
+  VIDEO_WIDTH: 1920,
+  VIDEO_HEIGHT: 1080,
+  VIDEO_FRAMERATE: 30,
+  GET_DISPLAY_MEDIA_CROP: '',
+  VIDEO_URL: '',
+  AUDIO_URL: '',
+  USE_FAKE_MEDIA: false,
+  SAVE_MEDIA_URL: '',
+  GET_CAPABILITIES_DISABLED_VIDEO_CODECS: [] as string[],
 }
 
-if ('webrtcperf' in window) {
-  Object.assign(webrtcperf, window.webrtcperf)
-  overrideLocalStorage()
+export const params = {
+  actions: [] as Action[],
+  enableVideoStats: false as EnableValue,
+  getUserMediaWaitTime: 0 as number,
+  getDisplayMediaWaitTime: 0 as number,
+  timestampWatermarkAudio: false as EnableValue,
+  timestampWatermarkVideo: false as EnableValue,
+  fakeScreenshare: null as FakeScreenshareParams | null,
+  drawWatermarkGrid: false,
+  timestampInsertableStreams: false,
+  peerConnectionDebug: false as EnableValue,
+  // Save tracks
+  saveSendVideoTrack: false as EnableValue,
+  saveVideoTrackEnableStart: 0 as number,
+  saveVideoTrackEnableEnd: 0 as number,
+  saveSendAudioTrack: false as EnableValue,
+  saveAudioTrackEnableStart: 0 as number,
+  saveAudioTrackEnableEnd: 0 as number,
+  saveRecvVideoTrack: false as EnableValue,
+  saveRecvAudioTrack: false as EnableValue,
+  // Playout delay hint
+  playoutDelayHint: null as number | null,
+  jitterBufferTarget: null as number | { audio: number | null; video: number | null } | null,
+}
+
+if ('webrtcperf' in window && window.webrtcperf) {
+  Object.assign(config, window.webrtcperf.config || {})
+  Object.assign(params, window.webrtcperf.params || {})
+}
+
+/**
+ * Get the name of the webrtcperf participant.
+ */
+function getParticipantName(index = getIndex()) {
+  return `Participant-${index.toString().padStart(6, '0')}`
+}
+
+function getParticipantNameForSave(sendrecv: string, track: MediaStreamTrack) {
+  return `${overrides.getParticipantName()}_${sendrecv}_${track.id}`
+}
+
+/**
+ * Returns the name of the sender participant for a given track.
+ */
+function getReceiverParticipantName(track: MediaStreamTrack) {
+  return track.id
+}
+
+/**
+ * Check if the track is a sender display track.
+ * @param {MediaStreamTrack} track
+ * @returns {boolean}
+ */
+function isSenderDisplayTrack(track: MediaStreamTrack) {
+  if (track.kind !== 'video') return false
+
+  if (['detail', 'text'].indexOf(track.contentHint) !== -1) return true
+  if (track instanceof window.BrowserCaptureMediaStreamTrack) return true
+
+  const trackSettings = track.getSettings()
+  const trackConstraints = track.getConstraints()
+
+  if ('mediaSource' in trackConstraints && trackConstraints.mediaSource !== undefined) {
+    return trackConstraints.mediaSource === 'window' || trackConstraints.mediaSource === 'screen'
+  } else if (trackSettings.displaySurface || ('logicalSurface' in trackSettings && trackSettings.logicalSurface)) {
+    return true
+  } else {
+    return !trackSettings.deviceId
+  }
+}
+
+function isReceiverDisplayTrack(track: MediaStreamTrack) {
+  return isSenderDisplayTrack(track)
+}
+
+export const overrides = {
+  trackApplyConstraints: null as
+    | ((track: MediaStreamTrack, constraints?: MediaTrackConstraints) => MediaTrackConstraints)
+    | null,
+  getUserMedia: null as ((constraints?: MediaStreamConstraints) => MediaStreamConstraints) | null,
+  getUserMediaStream: null as ((stream: MediaStream) => MediaStream) | null,
+  getDisplayMedia: null as ((constraints?: MediaStreamConstraints) => MediaStreamConstraints) | null,
+  getDisplayMediaStream: null as ((stream: MediaStream) => MediaStream) | null,
+  createOffer: null as ((offer: RTCSessionDescriptionInit) => RTCSessionDescriptionInit) | null,
+  setLocalDescription: null as ((description: RTCSessionDescriptionInit) => RTCSessionDescriptionInit) | null,
+  setRemoteDescription: null as ((description: RTCSessionDescriptionInit) => RTCSessionDescriptionInit) | null,
+  setParameters: null as ((parameters: RTCRtpSendParameters) => RTCRtpSendParameters) | null,
+  setStreams: null as ((streams: MediaStream[]) => MediaStream[]) | null,
+  replaceTrack: null as ((track: MediaStreamTrack | null) => MediaStreamTrack) | null,
+  isSenderDisplayTrack,
+  isReceiverDisplayTrack,
+  getReceiverParticipantName,
+  getParticipantName,
+  getParticipantNameForSave,
+}
+
+export function elapsedTime() {
+  return Date.now() - config.START_TIMESTAMP
 }
 
 if (window.serializedConsoleLog) {
@@ -74,7 +190,7 @@ if (window.serializedConsoleLog) {
         })
         .filter((arg) => arg.length > 0)
         .join(' ')
-      
+
       void window.serializedConsoleLog(method, msg)
       return nativeFn(...args)
     }
@@ -85,7 +201,7 @@ if (window.serializedConsoleLog) {
  * Logging utility.
  */
 export function log(...args: unknown[]) {
-  console.log.apply(null, [`[webrtcperf-${webrtcperf.WEBRTC_PERF_INDEX}]`, ...args])
+  console.log.apply(null, [`[webrtcperf-${getIndex()}]`, ...args])
 }
 
 /**
@@ -96,21 +212,17 @@ export function sleep(ms: number) {
 }
 
 /**
- * Get the name of the webrtcperf participant.
+ * Get the index of the webrtcperf participant.
  */
-export function getParticipantName(index = webrtcperf.WEBRTC_PERF_INDEX || 0) {
-  return `Participant-${index.toString().padStart(6, '0')}`
-}
-
-export function getParticipantNameForSave(sendrecv: string, track: MediaStreamTrack) {
-  return `${getParticipantName()}_${sendrecv}_${track.id}`
+export function getIndex() {
+  return config.WEBRTC_PERF_INDEX || 0
 }
 
 /**
- * Returns the name of the sender participant for a given track.
+ * Get the URL of the webrtcperf participant.
  */
-export function getReceiverParticipantName(track: MediaStreamTrack) {
-  return track.id
+export function getUrl() {
+  return config.WEBRTC_PERF_URL || document.location.href
 }
 
 /**
@@ -136,12 +248,12 @@ export async function getElement(selector: string, timeout = 60000, throwError =
 }
 
 /**
- * getElements
- * @param {string} selector
- * @param {number} timeout
- * @param {boolean} throwError
- * @param {string} innerText
- * @return {Promise<HTMLElement[]>}
+ * It gets the elements matching the selector, waiting for them to be present in the DOM.
+ * @param {string} selector The selector to get the elements from.
+ * @param {number} timeout The timeout to wait for the elements to be present in the DOM.
+ * @param {boolean} throwError Whether to throw an error if the elements are not found.
+ * @param {string} innerText The inner text to filter the elements by.
+ * @return {Promise<HTMLElement[]>} The elements matching the selector.
  */
 export async function getElements(selector: string, timeout = 60000, throwError = false, innerText = '') {
   let elements = document.querySelectorAll(selector)
@@ -189,21 +301,6 @@ export function simulateMouseClick(element: HTMLElement) {
       }),
     ),
   )
-}
-
-/**
- * overrideLocalStorage
- */
-export function overrideLocalStorage() {
-  if (!webrtcperf.LOCAL_STORAGE) {
-    return
-  }
-  try {
-    const values = JSON.parse(webrtcperf.LOCAL_STORAGE)
-    Object.entries(values).map(([key, value]) => localStorage.setItem(key, value as string))
-  } catch (err) {
-    log(`overrideLocalStorage error: ${(err as Error).message}`)
-  }
 }
 
 export function injectCss(css: string, id = 'custom') {
@@ -278,162 +375,11 @@ export function unregisterServiceWorkers() {
   })
 }
 
-export class MeasuredStats {
-  ttl: number
-  secondsPerSample: number
-  storeId: string
-  maxItems: number
-  stats: { timestamp: number; value: number; count: number }[]
-  statsSum: number
-  statsCount: number
-  statsMin: number | undefined
-  statsMax: number | undefined
-
-  constructor({ ttl = 0, maxItems = 0, secondsPerSample = 1, storeId = '' }) {
-    this.ttl = ttl
-    this.secondsPerSample = secondsPerSample
-    this.storeId = storeId
-    this.maxItems = maxItems
-    this.stats = []
-    this.statsSum = 0
-    this.statsCount = 0
-    this.statsMin = undefined
-    this.statsMax = undefined
-    // Restore from localStorage.
-    this.load()
-  }
-
-  store() {
-    if (!this.storeId) {
-      return
-    }
-    try {
-      localStorage.setItem(
-        `webrtcperf-MeasuredStats-${this.storeId}`,
-        JSON.stringify({
-          stats: this.stats,
-          statsSum: this.statsSum,
-          statsCount: this.statsCount,
-          statsMin: this.statsMin,
-          statsMax: this.statsMax,
-        }),
-      )
-    } catch (err) {
-      log(`MeasuredStats store error: ${(err as Error).message}`)
-    }
-  }
-
-  load() {
-    if (!this.storeId) {
-      return
-    }
-    try {
-      const data = localStorage.getItem(`webrtcperf-MeasuredStats-${this.storeId}`)
-      if (data) {
-        const { stats, statsSum, statsCount, statsMin, statsMax } = JSON.parse(data)
-        this.stats = stats
-        this.statsSum = statsSum
-        this.statsCount = statsCount
-        this.statsMin = statsMin
-        this.statsMax = statsMax
-      }
-    } catch (err) {
-      log(`MeasuredStats load error: ${(err as Error).message}`)
-    }
-  }
-
-  clear() {
-    this.stats = []
-    this.statsSum = 0
-    this.statsCount = 0
-    this.statsMin = undefined
-    this.statsMax = undefined
-    this.store()
-  }
-
-  purge() {
-    let changed = false
-    if (this.ttl > 0) {
-      const now = Date.now()
-      let removeToIndex = -1
-      for (const [index, { timestamp }] of this.stats.entries()) {
-        if (now - timestamp > this.ttl * 1000) {
-          removeToIndex = index
-        } else {
-          break
-        }
-      }
-      if (removeToIndex >= 0) {
-        for (const { value, count } of this.stats.splice(0, removeToIndex + 1)) {
-          this.statsSum -= value
-          this.statsCount -= count
-        }
-        changed = true
-      }
-    }
-    if (this.maxItems && this.stats.length > this.maxItems) {
-      for (const { value, count } of this.stats.splice(0, this.stats.length - this.maxItems)) {
-        this.statsSum -= value
-        this.statsCount -= count
-      }
-      changed = true
-    }
-    if (changed) {
-      this.store()
-    }
-  }
-
-  /**
-   * push
-   * @param {number} timestamp
-   * @param {number} value
-   */
-  push(timestamp: number, value: number) {
-    if (timestamp === undefined || value === undefined || isNaN(timestamp) || isNaN(value)) {
-      log(`MeasuredStats.push invalid value: timestamp=${timestamp} value=${value}`)
-      return
-    }
-    const last = this.stats[this.stats.length - 1]
-    if (last && timestamp - last.timestamp < this.secondsPerSample * 1000) {
-      last.value += value
-      last.count += 1
-    } else {
-      this.stats.push({ timestamp, value, count: 1 })
-    }
-    this.statsSum += value
-    this.statsCount += 1
-    if (this.statsMin === undefined || value < this.statsMin) this.statsMin = value
-    if (this.statsMax === undefined || value > this.statsMax) this.statsMax = value
-    this.purge()
-  }
-
-  /**
-   * mean
-   * @returns {number | undefined} The mean value.
-   */
-  mean() {
-    this.purge()
-    return this.statsCount ? this.statsSum / this.statsCount : undefined
-  }
-
-  get size() {
-    return this.statsCount
-  }
-
-  get min() {
-    return this.statsMin
-  }
-
-  get max() {
-    return this.statsMax
-  }
-}
-
 /**
  * Check if the current session is included into the value setting configuration.
- * @param {number | string | boolean} value A session ID number, a range of numbers separated by a dash, a comma separated list of numbers or a boolean.
+ * @param value A session ID number, a range of numbers separated by a dash, a comma separated list of numbers or a boolean.
  */
-export function enabledForSession(value: number | string | boolean) {
+export function enabledForSession(value: EnableValue) {
   if (value === true || value === 'true') {
     return true
   } else if (value === false || value === 'false' || value === undefined) {
@@ -441,10 +387,10 @@ export function enabledForSession(value: number | string | boolean) {
   } else if (typeof value === 'string') {
     if (value.indexOf('-') !== -1) {
       const [start, end] = value.split('-').map((s) => parseInt(s))
-      if (isFinite(start) && webrtcperf.WEBRTC_PERF_INDEX < start) {
+      if (isFinite(start) && getIndex() < start) {
         return false
       }
-      if (isFinite(end) && webrtcperf.WEBRTC_PERF_INDEX > end) {
+      if (isFinite(end) && getIndex() > end) {
         return false
       }
       return true
@@ -453,92 +399,12 @@ export function enabledForSession(value: number | string | boolean) {
         .split(',')
         .filter((s) => s.length)
         .map((s) => parseInt(s))
-      return indexes.includes(webrtcperf.WEBRTC_PERF_INDEX)
+      return indexes.includes(getIndex())
     }
-  } else if (webrtcperf.WEBRTC_PERF_INDEX === value) {
+  } else if (getIndex() === value) {
     return true
   }
   return false
-}
-
-// Common page actions
-let actionsStarted = false
-
-export async function setupActions() {
-  if (!webrtcperf.params.actions || actionsStarted) {
-    return
-  }
-  actionsStarted = true
-
-  const actions = webrtcperf.params.actions
-  actions
-    .sort((a, b) => (a.at || 0) - (b.at || 0))
-    .forEach((action) => {
-      const { name, at, relaxedAt, every, times, index, params } = action
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const fn = (window as any)[name] || (webrtcperf as any)[name]
-      if (!fn) {
-        log(`setupActions undefined action: "${name}"`)
-        return
-      }
-
-      if (index !== undefined) {
-        if (!enabledForSession(index)) {
-          return
-        }
-      }
-
-      const setupTime = webrtcperf.elapsedTime()
-      let startTime = at > 0 ? at * 1000 - setupTime : 0
-      if (startTime < 0) {
-        if (relaxedAt) {
-          log(
-            `setupActions action "${name}" already passed (setupTime: ${setupTime / 1000} at: ${at}), running immediately`,
-          )
-          startTime = 0
-        } else {
-          log(`setupActions action "${name}" already passed (setupTime: ${setupTime / 1000} at: ${at})`)
-          if (every > 0) {
-            startTime = Math.ceil(-startTime / (every * 1000)) * every * 1000 + startTime
-          } else {
-            return
-          }
-        }
-      }
-      log(
-        `scheduling action ${name}(${params || ''}) at ${at}s${every ? ` every ${every}s` : ''}${
-          times ? ` ${times} times` : ''
-        } with startTime: ${startTime}ms setupTime: ${setupTime}ms`,
-      )
-      let currentIteration = 0
-      const cb = async () => {
-        const now = webrtcperf.elapsedTime()
-        const ts = (now / 1000).toFixed(0)
-        log(
-          `run action [${ts}s] ${name}(${params || ''})${every ? ` every ${every}s` : ''}${
-            times ? ` (${times - currentIteration}/${times} times remaining)` : ''
-          } (system time: ${Date.now()})`,
-        )
-        try {
-          if (params && params.length) {
-            await fn(...params)
-          } else {
-            await fn()
-          }
-          const elapsed = ((webrtcperf.elapsedTime() - now) / 1000).toFixed(3)
-          log(`run action [${ts}s] [${webrtcperf.WEBRTC_PERF_INDEX}] ${name} done (${elapsed}s elapsed)`)
-        } catch (err) {
-          log(`run action [${ts}s] [${webrtcperf.WEBRTC_PERF_INDEX}] ${name} error: ${(err as Error).message}`)
-        } finally {
-          currentIteration += 1
-          if (every > 0 && currentIteration < (times || Infinity)) {
-            setTimeout(cb, every * 1000)
-          }
-        }
-      }
-
-      setTimeout(cb, startTime)
-    })
 }
 
 export function stringToBinary(str: string) {
@@ -568,88 +434,10 @@ export function createWorker(fn: () => void) {
  */
 export async function waitUtilTime(waitUtilTime: number, waitUtilTimeRate = 0) {
   if (!waitUtilTime) return
-  const participantWaitTime = waitUtilTimeRate > 0 ? webrtcperf.WEBRTC_PERF_INDEX / waitUtilTimeRate : 0
-  const t = waitUtilTime * 1000 + participantWaitTime * 1000 - webrtcperf.elapsedTime()
+  const participantWaitTime = waitUtilTimeRate > 0 ? getIndex() / waitUtilTimeRate : 0
+  const t = waitUtilTime * 1000 + participantWaitTime * 1000 - elapsedTime()
   if (t > 0) {
     log(`Waiting ${t / 1000}s`)
     await sleep(t)
-  }
-}
-
-/**
- * It implements a simple timer.
- */
-export class Timer {
-  duration: number
-  lastTime: number
-  timer: NodeJS.Timeout | null
-  startEvents: number
-  stopEvents: number
-
-  constructor() {
-    this.duration = 0
-    this.lastTime = 0
-    this.timer = null
-    this.startEvents = 0
-    this.stopEvents = 0
-  }
-
-  start() {
-    if (this.timer) return
-    this.lastTime = Date.now()
-    this.startEvents++
-    this.timer = setInterval(() => {
-      const now = Date.now()
-      this.duration += (now - this.lastTime) / 1000
-      this.lastTime = now
-    }, 1000)
-  }
-
-  stop() {
-    if (!this.timer) return
-    clearInterval(this.timer)
-    this.timer = null
-    if (this.lastTime) {
-      this.duration += (Date.now() - this.lastTime) / 1000
-      this.lastTime = 0
-    }
-    this.stopEvents++
-  }
-}
-/**
- * It implements an on/off timer.
- */
-export class OnOffTimer {
-  onTimer: Timer
-  offTimer: Timer
-  ids: Set<string>
-
-  constructor() {
-    this.onTimer = new Timer()
-    this.offTimer = new Timer()
-    this.ids = new Set()
-  }
-
-  get onDuration() {
-    return this.onTimer.duration
-  }
-
-  get offDuration() {
-    return this.offTimer.duration
-  }
-
-  add(id: string) {
-    if (this.ids.has(id)) return
-    this.ids.add(id)
-    this.offTimer.stop()
-    this.onTimer.start()
-  }
-
-  remove(id: string) {
-    if (!this.ids.has(id)) return
-    this.ids.delete(id)
-    if (this.ids.size > 0) return
-    this.onTimer.stop()
-    this.offTimer.start()
   }
 }

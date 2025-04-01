@@ -1,29 +1,36 @@
-/* global webrtcperf */
+import { createWorker, overrides, log, config } from './common'
 
 const saveFileWorkerFn = () => {
-  const debug = (...args) => {
+  const debug = (...args: unknown[]) => {
     console.log.apply(null, ['[webrtcperf-savefileworker]', ...args])
   }
 
-  const wsClient = async (url) => {
+  const wsClient = async (url: string) => {
     const client = new WebSocket(url, [])
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       if (client.readyState === WebSocket.OPEN) {
         resolve()
       } else if (client.readyState === WebSocket.CLOSED) {
         reject(new Error('WebSocket closed'))
       }
-      client.addEventListener('open', resolve, { once: true })
-      client.addEventListener('error', reject, { once: true })
+      client.addEventListener('open', () => resolve(), { once: true })
+      client.addEventListener('error', (err) => reject(err), { once: true })
     })
     return client
   }
 
-  const stringToBinary = (str) => {
-    return str.split('').reduce((prev, cur, index) => prev + (cur.charCodeAt() << (8 * index)), 0)
+  const stringToBinary = (str: string) => {
+    return str.split('').reduce((prev, cur, index) => prev + (cur.charCodeAt(0) << (8 * index)), 0)
   }
 
-  const writeIvfHeader = (ws, width, height, frameRateDenominator, frameRateNumerator, fourcc) => {
+  const writeIvfHeader = (
+    ws: WebSocket,
+    width: number,
+    height: number,
+    frameRateDenominator: number,
+    frameRateNumerator: number,
+    fourcc: string,
+  ) => {
     const data = new ArrayBuffer(32)
     const view = new DataView(data)
     view.setUint32(0, stringToBinary('DKIF'), true)
@@ -63,7 +70,6 @@ const saveFileWorkerFn = () => {
       const header = new ArrayBuffer(12)
       const view = new DataView(header)
 
-      // eslint-disable-next-line no-undef
       const encoder = new VideoEncoder({
         output: (chunk) => {
           if (ws.readyState !== WebSocket.OPEN) return
@@ -76,7 +82,7 @@ const saveFileWorkerFn = () => {
             if (startTimestamp === -1) {
               startTimestamp = timestamp
             }
-            let pts = Math.round((frameRate * (timestamp - startTimestamp)) / 1000000)
+            const pts = Math.round((frameRate * (timestamp - startTimestamp)) / 1000000)
             if (pts <= lastPts) {
               debug(`skip pts: ${pts} <= ${lastPts} timestamp: ${timestamp} lastTimestamp: ${lastTimestamp}`)
               return
@@ -92,13 +98,13 @@ const saveFileWorkerFn = () => {
             lastPts = pts
             lastTimestamp = timestamp
           } catch (err) {
-            debug(`saveMediaTrack ${url} error=${err.message}`)
+            debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
           }
         },
         error: (e) => debug(`encoder error: ${e.message}`),
       })
 
-      const configureEncoder = (width, height) => {
+      const configureEncoder = (width: number, height: number) => {
         debug(`configureEncoder ${width}x${height}@${frameRate}`)
         if (encoder?.state === 'configured') {
           encoder.flush()
@@ -119,7 +125,7 @@ const saveFileWorkerFn = () => {
 
       const writableStream = new WritableStream(
         {
-          async write(/** @type VideoFrame */ frame) {
+          async write(frame: VideoFrame) {
             const { codedWidth, codedHeight, timestamp, duration } = frame
             try {
               //log(`encode ${timestamp} ${duration} ${codedWidth}x${codedHeight} ${frame.format}`)
@@ -131,10 +137,9 @@ const saveFileWorkerFn = () => {
                 const buffer = new Uint8Array(frame.allocationSize({ rect, format: 'RGBA' }))
                 await frame.copyTo(buffer, { rect, format: 'RGBA' })
                 frame.close()
-                // eslint-disable-next-line no-undef
                 frame = new VideoFrame(buffer, {
                   timestamp,
-                  duration,
+                  duration: duration ?? undefined,
                   codedWidth: w,
                   codedHeight: h,
                   format: 'RGBA',
@@ -145,7 +150,7 @@ const saveFileWorkerFn = () => {
               }
               encoder.encode(frame, { keyFrame: true })
             } catch (err) {
-              debug(`saveMediaTrack ${url} error=${err.message}`)
+              debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
             } finally {
               frame.close()
             }
@@ -173,13 +178,13 @@ const saveFileWorkerFn = () => {
         },
         new CountQueuingStrategy({ highWaterMark: frameRate * 10 }),
       )
-      readable.pipeTo(writableStream, { signal: controller.signal }).catch((err) => {
-        debug(`saveMediaTrack ${url} error=${err.message}`)
+      readable.pipeTo(writableStream, { signal: controller.signal }).catch((err: unknown) => {
+        debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
       })
     } else {
       const writableStream = new WritableStream(
         {
-          async write(/** @type AudioData */ frame) {
+          async write(frame: AudioData) {
             if (ws.readyState === WebSocket.OPEN) {
               try {
                 const { numberOfFrames } = frame
@@ -187,7 +192,7 @@ const saveFileWorkerFn = () => {
                 frame.copyTo(data, { planeIndex: 0 })
                 ws.send(data)
               } catch (err) {
-                debug(`saveMediaTrack ${url} error=${err.message}`)
+                debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
               }
             }
             frame.close()
@@ -207,29 +212,29 @@ const saveFileWorkerFn = () => {
         },
         new CountQueuingStrategy({ highWaterMark: 100 }),
       )
-      readable.pipeTo(writableStream, { signal: controller.signal }).catch((err) => {
-        debug(`saveMediaTrack ${url} error=${err.message}`)
+      readable.pipeTo(writableStream, { signal: controller.signal }).catch((err: unknown) => {
+        debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
       })
     }
   }
 }
 
-webrtcperf.saveFileWorker = null
-webrtcperf.savingTracks = {
+export let saveFileWorker: Worker | null = null
+const savingTracks = {
   audio: new Set(),
   video: new Set(),
 }
 
-const getSaveFileWorker = () => {
-  if (!webrtcperf.saveFileWorker) {
-    webrtcperf.saveFileWorker = webrtcperf.createWorker(saveFileWorkerFn)
-    webrtcperf.saveFileWorker.onmessage = (event) => {
+function getSaveFileWorker() {
+  if (!saveFileWorker) {
+    saveFileWorker = createWorker(saveFileWorkerFn)
+    saveFileWorker.onmessage = (event) => {
       const { name, reason, kind, id } = event.data
-      webrtcperf.log(`saveFileWorker event: ${name} kind: ${kind} id: ${id} reason: ${reason}`)
-      webrtcperf.savingTracks[kind].delete(id)
+      log(`saveFileWorker event: ${name} kind: ${kind} id: ${id} reason: ${reason}`)
+      savingTracks[kind as keyof typeof savingTracks].delete(id)
     }
   }
-  return webrtcperf.saveFileWorker
+  return saveFileWorker
 }
 
 /**
@@ -245,23 +250,26 @@ const getSaveFileWorker = () => {
  * @param {Number} height The video crop height.
  * @param {Number} frameRate The video frame rate.
  */
-webrtcperf.saveMediaTrack = async (
-  track,
-  sendrecv,
+export async function saveMediaTrack(
+  track: MediaStreamTrack,
+  sendrecv: 'send' | 'recv',
   enableStart = 0,
   enableEnd = 0,
   x = 0,
   y = 0,
   width = 0,
   height = 0,
-  frameRate = webrtcperf.VIDEO_FRAMERATE,
-) => {
+  frameRate = config.VIDEO_FRAMERATE,
+) {
+  if (!config.SAVE_MEDIA_URL) {
+    throw new Error('config.SAVE_MEDIA_URL is not set')
+  }
   const { id, kind } = track
-  if (webrtcperf.savingTracks[kind].has(id)) {
+  if (savingTracks[kind as keyof typeof savingTracks].has(id)) {
     return
   }
   const { readable } = new window.MediaStreamTrackProcessor({ track })
-  webrtcperf.savingTracks[kind].add(id)
+  savingTracks[kind as keyof typeof savingTracks].add(id)
 
   if (enableStart > 0) {
     track.enabled = false
@@ -275,12 +283,10 @@ webrtcperf.saveMediaTrack = async (
     }, enableEnd)
   }
 
-  const filename = `${webrtcperf.getParticipantNameForSave(sendrecv, track)}${kind === 'audio' ? '.f32le.raw' : '.ivf.raw'}`
-  const url = `ws${webrtcperf.SERVER_USE_HTTPS ? 's' : ''}://localhost:${
-    webrtcperf.SERVER_PORT
-  }/?auth=${webrtcperf.SERVER_SECRET}&action=write-stream&filename=${filename}`
+  const filename = `${overrides.getParticipantNameForSave(sendrecv, track)}${kind === 'audio' ? '.f32le.raw' : '.ivf.raw'}`
+  const url = `${config.SAVE_MEDIA_URL}&filename=${filename}`
 
-  webrtcperf.log(`saveMediaTrack ${filename}`)
+  log(`saveMediaTrack ${filename}`)
   getSaveFileWorker().postMessage(
     {
       action: 'start',
@@ -298,15 +304,11 @@ webrtcperf.saveMediaTrack = async (
   )
 }
 
-webrtcperf.stopSaveMediaTrack = async (track) => {
+export async function stopSaveMediaTrack(track: MediaStreamTrack) {
   const { id, kind } = track
-  if (!webrtcperf.savingTracks[kind].has(id)) {
+  if (!savingTracks[kind as keyof typeof savingTracks].has(id)) {
     return
   }
-  webrtcperf.log(`stopSaveMediaTrack ${id}`)
-  getSaveFileWorker().postMessage({
-    action: 'stop',
-    id,
-    kind,
-  })
+  log(`stopSaveMediaTrack ${id}`)
+  getSaveFileWorker().postMessage({ action: 'stop', id, kind })
 }

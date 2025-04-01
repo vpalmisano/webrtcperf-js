@@ -1,55 +1,54 @@
-/* global webrtcperf, Tesseract */
+import { createWorker, loadScript, log, overrides, params } from './common'
+import { MeasuredStats } from './stats'
 
 /**
  * Video end-to-end delay stats.
- * @type MeasuredStats
  */
-webrtcperf.videoEndToEndDelayStats = new webrtcperf.MeasuredStats({ ttl: 15 })
-webrtcperf.screenEndToEndDelayStats = new webrtcperf.MeasuredStats({ ttl: 15 })
+export const videoEndToEndDelayStats = new MeasuredStats({ ttl: 15 })
+export const screenEndToEndDelayStats = new MeasuredStats({ ttl: 15 })
 
-webrtcperf.videoStartFrameDelayStats = new webrtcperf.MeasuredStats({ ttl: 60 })
-webrtcperf.videoStartFrameTime = undefined
+export const videoStartFrameDelayStats = new MeasuredStats({ ttl: 60 })
+export let videoStartFrameTime = 0
 
-webrtcperf.screenStartFrameDelayStats = new webrtcperf.MeasuredStats({ ttl: 60 })
-webrtcperf.screenStartFrameTime = undefined
+export const screenStartFrameDelayStats = new MeasuredStats({ ttl: 60 })
+export let screenStartFrameTime = 0
 
 /**
  * It sets the start frame time used for calculating the videoStartFrameDelay metric.
- * @param {number} value The start frame time in seconds.
+ * @param value The start frame time in seconds.
  */
-webrtcperf.setVideoStartFrameTime = (value) => {
-  webrtcperf.videoStartFrameTime = value
+export function setVideoStartFrameTime(value: number) {
+  videoStartFrameTime = value
 }
 
 /**
  * It sets the start frame time used for calculating the screenStartFrameDelay metric.
- * @param {number} value The start frame time in seconds.
+ * @param value The start frame time in seconds.
  */
-webrtcperf.setScreenStartFrameTime = (value) => {
-  webrtcperf.screenStartFrameTime = value
+export function setScreenStartFrameTime(value: number) {
+  screenStartFrameTime = value
 }
 
-webrtcperf.collectVideoEndToEndStats = () => {
+export function collectVideoEndToEndStats() {
+  const videoDelay = videoEndToEndDelayStats.mean()
+  const screenDelay = screenEndToEndDelayStats.mean()
   return {
-    videoDelay: webrtcperf.videoEndToEndDelayStats.mean(),
+    videoDelay: videoEndToEndDelayStats.mean(),
     videoStartFrameDelay:
-      webrtcperf.videoStartFrameDelayStats.size &&
-      webrtcperf.videoStartFrameTime !== undefined &&
-      webrtcperf.videoStartFrameDelayStats.mean() > webrtcperf.videoStartFrameTime
-        ? webrtcperf.videoStartFrameDelayStats.mean() - webrtcperf.videoStartFrameTime
+      videoDelay !== undefined && videoStartFrameTime !== undefined && videoDelay > videoStartFrameTime
+        ? videoDelay - videoStartFrameTime
         : undefined,
-    screenDelay: webrtcperf.screenEndToEndDelayStats.mean(),
+    screenDelay: screenEndToEndDelayStats.mean(),
     screenStartFrameDelay:
-      webrtcperf.screenStartFrameDelayStats.size &&
-      webrtcperf.screenStartFrameTime !== undefined &&
-      webrtcperf.screenStartFrameDelayStats.mean() > webrtcperf.screenStartFrameTime
-        ? webrtcperf.screenStartFrameDelayStats.mean() - webrtcperf.screenStartFrameTime
+      screenDelay !== undefined && screenStartFrameTime !== undefined && screenDelay > screenStartFrameTime
+        ? screenDelay - screenStartFrameTime
         : undefined,
   }
 }
 
 const applyVideoTimestampWatermarkFn = () => {
-  const debug = (...args) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const debug = (...args: any[]) => {
     console.log.apply(null, ['[webrtcperf-applyVideoTimestampWatermarkWorker]', ...args])
   }
 
@@ -58,7 +57,7 @@ const applyVideoTimestampWatermarkFn = () => {
     debug(`participantName=${participantName} ${width}x${height}`)
 
     const canvas = new OffscreenCanvas(width, height)
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d')!
     const fontSize = Math.round(canvas.height / 18)
     ctx.font = `${fontSize}px Noto Mono`
     ctx.textAlign = 'center'
@@ -96,7 +95,7 @@ const applyVideoTimestampWatermarkFn = () => {
         ctx.fillText(text, width / 2, fontSize)
 
         const newBitmap = await createImageBitmap(canvas)
-        // eslint-disable-next-line no-undef
+
         const newFrame = new VideoFrame(newBitmap, { timestamp })
         newBitmap.close()
         controller.enqueue(newFrame)
@@ -110,18 +109,19 @@ const applyVideoTimestampWatermarkFn = () => {
     readable
       .pipeThrough(transformer)
       .pipeTo(writable)
-      .catch((err) => {
-        debug(`applyVideoTimestampWatermark error: ${err.message}`)
+      .catch((err: unknown) => {
+        debug(`applyVideoTimestampWatermark error: ${(err as Error).message}`)
       })
   }
 }
 
-let applyVideoTimestampWatermarkWorker = null
+let applyVideoTimestampWatermarkWorker: Worker | null = null
 
-const getApplyVideoTimestampWatermarkWorker = () => {
-  if (!applyVideoTimestampWatermarkWorker) {
-    applyVideoTimestampWatermarkWorker = webrtcperf.createWorker(applyVideoTimestampWatermarkFn)
+function getApplyVideoTimestampWatermarkWorker() {
+  if (applyVideoTimestampWatermarkWorker) {
+    return applyVideoTimestampWatermarkWorker
   }
+  applyVideoTimestampWatermarkWorker = createWorker(applyVideoTimestampWatermarkFn)
   return applyVideoTimestampWatermarkWorker
 }
 
@@ -131,9 +131,9 @@ const getApplyVideoTimestampWatermarkWorker = () => {
  * @param {MediaStream} mediaStream
  * @returns {MediaStream}
  */
-webrtcperf.applyVideoTimestampWatermark = (mediaStream) => {
+export function applyVideoTimestampWatermark(mediaStream: MediaStream) {
   if (!('MediaStreamTrackProcessor' in window) || !('MediaStreamTrackGenerator' in window)) {
-    webrtcperf.log(`unsupported MediaStreamTrackProcessor and MediaStreamTrackGenerator`)
+    log(`unsupported MediaStreamTrackProcessor and MediaStreamTrackGenerator`)
     return mediaStream
   }
   const track = mediaStream.getVideoTracks()[0]
@@ -145,9 +145,9 @@ webrtcperf.applyVideoTimestampWatermark = (mediaStream) => {
   const trackConstraints = track.getConstraints()
 
   const { width, height } = trackSettings
-  const participantName = webrtcperf.getParticipantName()
+  const participantName = overrides.getParticipantName()
 
-  webrtcperf.log(`applyVideoTimestampWatermark ${track.id}`, { track, trackSettings, trackConstraints })
+  log(`applyVideoTimestampWatermark ${track.id}`, { track, trackSettings, trackConstraints })
 
   const trackProcessor = new window.MediaStreamTrackProcessor({ track })
   const trackGenerator = new window.MediaStreamTrackGenerator({ kind: 'video' })
@@ -157,7 +157,7 @@ webrtcperf.applyVideoTimestampWatermark = (mediaStream) => {
   })
   const trackGeneratorStop = trackGenerator.stop.bind(trackGenerator)
   trackGenerator.stop = () => {
-    webrtcperf.log(`applyVideoTimestampWatermark ${track.id} stop`)
+    log(`applyVideoTimestampWatermark ${track.id} stop`)
     trackGeneratorStop()
     track.stop()
   }
@@ -172,7 +172,7 @@ webrtcperf.applyVideoTimestampWatermark = (mediaStream) => {
       width,
       height,
       participantName,
-      drawGrid: webrtcperf.params.drawWatermarkGrid,
+      drawGrid: params.drawWatermarkGrid,
     },
     [readable, writable],
   )
@@ -184,58 +184,80 @@ webrtcperf.applyVideoTimestampWatermark = (mediaStream) => {
 
 const TESSERACT_VERSION = '6.0.0'
 
+interface TesseractScheduler {
+  addWorker(worker: TesseractWorker): void
+  addJob(job: string, data: OffscreenCanvas): Promise<{ data: { text: string; confidence: number } }>
+}
+interface TesseractWorker {
+  setParameters(parameters: { tessedit_pageseg_mode: number; tessedit_char_whitelist: string }): Promise<void>
+}
+interface TesseractTypes {
+  setLogging(logging: boolean): void
+  createScheduler(): TesseractScheduler
+  createWorker(
+    lang: string,
+    oem: string,
+    options: {
+      workerPath?: string
+      langPath?: string
+      corePath?: string
+      logger?: (m: { status: string }) => void
+      errorHandler?: (e: Error) => void
+    },
+  ): Promise<TesseractWorker>
+  PSM: { SINGLE_LINE: number }
+  OEM: { LSTM_ONLY: string }
+}
+declare const Tesseract: TesseractTypes
+
+let tesseractData: Promise<{ scheduler: TesseractScheduler; worker: TesseractWorker }> | null = null
+
 async function loadTesseract() {
-  if (window._tesseractData) {
-    return await window._tesseractData
+  if (tesseractData) {
+    return await tesseractData
   }
   const load = async () => {
-    await webrtcperf.loadScript(
-      'tesseract',
-      `https://unpkg.com/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.min.js`,
-    )
-    webrtcperf.log('Creating Tesseract worker')
+    await loadScript('tesseract', `https://unpkg.com/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.min.js`)
+    log('Creating Tesseract worker')
     try {
-      await window.setRequestInterception(false)
-      // Tesseract.setLogging(true)
+      Tesseract.setLogging(true)
       const scheduler = Tesseract.createScheduler()
       const worker = await Tesseract.createWorker('eng', Tesseract.OEM.LSTM_ONLY, {
-        //workerPath: `${serverAssets}/tesseract-worker.min.js`,
-        //langPath: serverAssets,
-        //corePath: `${serverAssets}/tesseract-core.wasm.js`,
-        logger: (m) => m.status.startsWith('recognizing') || webrtcperf.log(`[tesseract]`, m),
-        errorHandler: (e) => webrtcperf.log(`[tesseract] error: ${e.message}`),
+        logger: (m: { status: string }) => {
+          if (!m.status.startsWith('recognizing')) log(`[tesseract]`, m)
+        },
+        errorHandler: (e: Error) => {
+          log(`[tesseract] error: ${e.message}`)
+        },
       })
       await worker.setParameters({
         tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE,
         tessedit_char_whitelist: '0123456789-',
       })
       scheduler.addWorker(worker)
-      webrtcperf.log('Creating Tesseract worker done')
-      window._tesseractData = { scheduler, worker }
+      log('Creating Tesseract worker done')
       return { scheduler, worker }
     } catch (err) {
-      webrtcperf.log(`Creating Tesseract worker error: ${err.message}`)
+      log(`Creating Tesseract worker error: ${(err as Error).message}`)
       throw err
-    } finally {
-      await window.setRequestInterception(true)
     }
   }
-  window._tesseractData = load()
-  return await window._tesseractData
+  tesseractData = load()
+  return await tesseractData
 }
 
-webrtcperf.processingVideoTracks = new Set()
+const processingVideoTracks = new Set<MediaStreamTrack>()
 
 /**
  * recognizeVideoTimestampWatermark
  * @param {MediaStreamTrack} track
  * @param {number} measureInterval
  */
-webrtcperf.recognizeVideoTimestampWatermark = async (track, measureInterval = 5) => {
-  if (track.ended || track.kind !== 'video' || webrtcperf.processingVideoTracks.has(track)) return
-  webrtcperf.processingVideoTracks.add(track)
-  track.addEventListener('ended', () => webrtcperf.processingVideoTracks.delete(track))
-  webrtcperf.log(`recognizeVideoTimestampWatermark ${track.id} ${track.label}`, track.getSettings())
+export async function recognizeVideoTimestampWatermark(track: MediaStreamTrack, measureInterval = 5) {
+  if (track.readyState === 'ended' || track.kind !== 'video' || processingVideoTracks.has(track)) return
+  processingVideoTracks.add(track)
+  track.addEventListener('ended', () => processingVideoTracks.delete(track))
+  log(`recognizeVideoTimestampWatermark ${track.id} ${track.label}`, track.getSettings())
   const { scheduler } = await loadTesseract()
   let lastTimestamp = 0
 
@@ -251,7 +273,7 @@ webrtcperf.recognizeVideoTimestampWatermark = async (track, measureInterval = 5)
           const textHeight = Math.max(Math.round(codedHeight / 15), 24)
           const bitmap = await createImageBitmap(videoFrame, 0, 0, codedWidth, textHeight)
           const canvas = new OffscreenCanvas(codedWidth, textHeight)
-          const ctx = canvas.getContext('bitmaprenderer')
+          const ctx = canvas.getContext('bitmaprenderer')!
           ctx.transferFromImageBitmap(bitmap)
           bitmap.close()
 
@@ -264,36 +286,36 @@ webrtcperf.recognizeVideoTimestampWatermark = async (track, measureInterval = 5)
                 const delay = now - recognizedTimestamp
                 if (isFinite(delay) && delay > 0 && delay < 30000) {
                   const elapsed = Date.now() - now
-                  webrtcperf.log(
+                  log(
                     `VideoTimestampWatermark text=${cleanText} delay=${delay}ms confidence=${
                       data.confidence
                     } elapsed=${elapsed}ms`,
                   )
-                  if (await webrtcperf.isReceiverDisplayTrack(track)) {
-                    webrtcperf.screenEndToEndDelayStats.push(now, delay / 1000)
+                  if (await overrides.isReceiverDisplayTrack(track)) {
+                    screenEndToEndDelayStats.push(now, delay / 1000)
                   } else {
-                    webrtcperf.videoEndToEndDelayStats.push(now, delay / 1000)
+                    videoEndToEndDelayStats.push(now, delay / 1000)
                   }
                 }
               }
             })
-            .catch((err) => {
-              webrtcperf.log(`recognizeVideoTimestampWatermark error: ${err.message}`)
+            .catch((err: unknown) => {
+              log(`recognizeVideoTimestampWatermark error: ${(err as Error).message}`)
             })
         }
         videoFrame.close()
       },
       close() {
-        webrtcperf.processingVideoTracks.delete(track)
+        processingVideoTracks.delete(track)
       },
       abort(err) {
-        webrtcperf.log('WritableStream error:', err)
-        webrtcperf.processingVideoTracks.delete(track)
+        log('WritableStream error:', err)
+        processingVideoTracks.delete(track)
       },
     },
     new CountQueuingStrategy({ highWaterMark: 30 }),
   )
-  trackProcessor.readable.pipeTo(writableStream).catch((err) => {
-    webrtcperf.log(`recognizeVideoTimestampWatermark error: ${err.message}`)
+  trackProcessor.readable.pipeTo(writableStream).catch((err: unknown) => {
+    log(`recognizeVideoTimestampWatermark error: ${(err as Error).message}`)
   })
 }

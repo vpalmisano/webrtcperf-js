@@ -15,8 +15,7 @@
   "version": "1.0.0",
   "main": "dist/webrtcperf.js",
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "license": "AGPL-3.0-or-later",
   "devDependencies": {
@@ -35,6 +34,7 @@
     "webpack-cli": "^6.0.1"
   },
   "scripts": {
+    "prepare": "webpack",
     "build": "webpack",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",

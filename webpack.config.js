@@ -13,6 +13,11 @@ module.exports = {
   },
   resolve: {
     extensions: ['.ts', '.js'],
+    fallback: {
+      "fs": false,
+      "path": false,
+      "os": false
+    },
   },
   mode: 'production',
   output: {

@@ -45,5 +45,8 @@
     "trailingComma": "all",
     "printWidth": 120,
     "tabWidth": 2
+  },
+  "dependencies": {
+    "@vpalmisano/ggwave": "0.4.3-1"
   }
 }

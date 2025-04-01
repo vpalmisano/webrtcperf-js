@@ -281,6 +281,11 @@
     "@typescript-eslint/types" "8.28.0"
     eslint-visitor-keys "^4.2.0"
 
+"@vpalmisano/ggwave@0.4.3-1":
+  version "0.4.3-1"
+  resolved "https://npm.pkg.github.com/download/@vpalmisano/ggwave/0.4.3-1/4a93008c8bfdc330915f1cf29d611602fb1880a0#4a93008c8bfdc330915f1cf29d611602fb1880a0"
+  integrity sha512-9trU5W97V18buU5kHnP6m2h3ggrsWIx1EFQcidQEpjT7r6Ay3E42alxULp1m84yjS4KAU/TgAXNIZ1L4VxnoMw==
+
 "@webassemblyjs/ast@1.14.1", "@webassemblyjs/ast@^1.14.1":
   version "1.14.1"
   resolved "https://registry.yarnpkg.com/@webassemblyjs/ast/-/ast-1.14.1.tgz#a9f6a07f2b03c95c8d38c4536a1fdfb521ff55b6"

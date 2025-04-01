@@ -6,7 +6,7 @@ declare global {
       config: typeof config
       params: typeof params
     }
-    serializedConsoleLog: (method: string, msg: string) => void
+    webrtcperf_serializedConsoleLog: (method: string, msg: string) => Promise<void>
     webrtcperf_keyPress: (key: string) => Promise<void>
     webrtcperf_keypressText: (selector: string, text: string) => Promise<void>
     webrtcperf_startFakeScreenshare: () => Promise<void>
@@ -146,7 +146,7 @@ export function elapsedTime() {
   return Date.now() - config.START_TIMESTAMP
 }
 
-if (window.serializedConsoleLog) {
+if (window.webrtcperf_serializedConsoleLog) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function safeStringify(obj: any) {
     const values = new Set()
@@ -191,7 +191,7 @@ if (window.serializedConsoleLog) {
         .filter((arg) => arg.length > 0)
         .join(' ')
 
-      void window.serializedConsoleLog(method, msg)
+      void window.webrtcperf_serializedConsoleLog(method, msg)
       return nativeFn(...args)
     }
   })

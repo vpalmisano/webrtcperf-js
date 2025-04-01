@@ -8,6 +8,7 @@ type GgwaveParameters = {
   samplesPerFrame: number
 }
 interface Ggwave {
+  disableLog(): void
   init(parameters: GgwaveParameters): number
   free(instance: number): void
   getDefaultParameters(): GgwaveParameters
@@ -58,12 +59,13 @@ function convertTypedArray(src: any, type: any) {
   return new type(buffer)
 }
 
-let ggwave: Ggwave | null = null
+export let ggwave: Ggwave | null = null
 
 if (enabledForSession(params.timestampWatermarkAudio)) {
   document.addEventListener('DOMContentLoaded', async () => {
     try {
       ggwave = await ggwave_factory()
+      ggwave.disableLog()
     } catch (e) {
       log(`ggwave error: ${e}`)
     }
@@ -74,8 +76,8 @@ let audioContext = null as AudioContext | null
 let audioDestination = null as MediaStreamAudioDestinationNode | null
 
 function initAudioTimestampWatermarkSender(interval = 5000) {
-  if (audioContext || !ggwave) return
-  log(`initAudioTimestampWatermarkSender with interval ${interval}ms`)
+  if (audioContext || audioDestination || !ggwave) return
+  log(`[e2e-audio-stats] initAudioTimestampWatermarkSender with interval ${interval}ms`)
 
   audioContext = new AudioContext({
     latencyHint: 'interactive',
@@ -110,7 +112,7 @@ export function applyAudioTimestampWatermark(mediaStream: MediaStream) {
     initAudioTimestampWatermarkSender()
   }
   const track = mediaStream.getAudioTracks()[0]
-  log(`AudioTimestampWatermark tx overrideGetUserMediaStream`, mediaStream.getAudioTracks()[0].id, '->', track.id)
+  log(`[e2e-audio-stats] applyAudioTimestampWatermark`, mediaStream.getAudioTracks()[0].id, '->', track.id)
 
   // Mix original track with watermark.
   const trackSource = audioContext!.createMediaStreamSource(new MediaStream([track]))
@@ -119,12 +121,19 @@ export function applyAudioTimestampWatermark(mediaStream: MediaStream) {
   trackSource.connect(gain)
   gain.connect(audioDestination!)
 
-  track.addEventListener('ended', () => {
-    trackSource.disconnect(gain)
-    if (audioDestination) gain.disconnect(audioDestination)
-  })
+  track.addEventListener(
+    'ended',
+    () => {
+      trackSource.disconnect(gain)
+      if (audioDestination) gain.disconnect(audioDestination)
+    },
+    { once: true },
+  )
 
-  const newMediaStream = new MediaStream([track.clone(), ...mediaStream.getVideoTracks()])
+  const newMediaStream = new MediaStream([
+    audioDestination!.stream.getAudioTracks()[0].clone(),
+    ...mediaStream.getVideoTracks(),
+  ])
 
   return newMediaStream
 }
@@ -133,7 +142,7 @@ const processingAudioTracks = new Set()
 
 export function recognizeAudioTimestampWatermark(track: MediaStreamTrack) {
   if (processingAudioTracks.has(track) || processingAudioTracks.size > 10 || track.readyState === 'ended') return
-  log(`AudioTimestampWatermark rx ${track.id}`)
+  log(`[e2e-audio-stats] recognizeAudioTimestampWatermark ${track.id}`)
   processingAudioTracks.add(track)
   track.addEventListener('ended', () => {
     processingAudioTracks.delete(track)
@@ -162,7 +171,7 @@ export function recognizeAudioTimestampWatermark(track: MediaStreamTrack) {
           parameters.operatingMode = ggwave.GGWAVE_OPERATING_MODE_RX | ggwave.GGWAVE_OPERATING_MODE_USE_DSS
           instance = ggwave.init(parameters)
           if (instance < 0) {
-            log(`AudioTimestampWatermark rx init failed: ${instance}`)
+            log(`[e2e-audio-stats] recognizeAudioTimestampWatermark init failed: ${instance}`)
             return
           }
         }
@@ -189,17 +198,17 @@ export function recognizeAudioTimestampWatermark(track: MediaStreamTrack) {
               const rxFramesDuration = (rxFrames * 1000 * samplesPerFrame) / sampleRate
               const delay = now - ts - rxFramesDuration
               log(
-                `AudioTimestampWatermark rx delay: ${delay}ms rxFrames: ${rxFrames} rxFramesDuration: ${rxFramesDuration}ms`,
+                `[e2e-audio-stats] rx delay: ${delay}ms rxFrames: ${rxFrames} rxFramesDuration: ${rxFramesDuration}ms`,
               )
               if (isFinite(delay) && delay > 0 && delay < 30000) {
                 audioEndToEndDelayStats.push(now, delay / 1000)
               }
             } catch (e) {
-              log(`AudioTimestampWatermark rx failed to parse ${data}: ${(e as Error).message}`)
+              log(`[e2e-audio-stats] rx failed to parse ${data}: ${(e as Error).message}`)
             }
           }
         } catch (err) {
-          log(`AudioTimestampWatermark error: ${(err as Error).message}`)
+          log(`[e2e-audio-stats] error: ${(err as Error).message}`)
         } finally {
           audioFrame.close()
         }
@@ -217,6 +226,6 @@ export function recognizeAudioTimestampWatermark(track: MediaStreamTrack) {
   )
   const trackProcessor = new window.MediaStreamTrackProcessor({ track })
   trackProcessor.readable.pipeTo(writableStream).catch((err: Error) => {
-    log(`recognizeAudioTimestampWatermark pipeTo error: ${err.message}`)
+    log(`[e2e-audio-stats] recognizeAudioTimestampWatermark pipeTo error: ${err.message}`)
   })
 }

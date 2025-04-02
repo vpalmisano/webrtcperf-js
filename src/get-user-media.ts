@@ -278,8 +278,6 @@ if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
 
     if ('webrtcperf_startFakeScreenshare' in window) {
       await window.webrtcperf_startFakeScreenshare()
-    } else {
-      await startFakeScreenshare()
     }
 
     if (overrides.getDisplayMedia) {

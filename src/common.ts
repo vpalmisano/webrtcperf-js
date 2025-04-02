@@ -31,6 +31,8 @@ type Action = {
 
 export type EnableValue = boolean | string | number
 
+export const VERSION = process.env.VERSION || 'dev'
+
 export const config = {
   START_TIMESTAMP: Date.now(),
   WEBRTC_PERF_INDEX: 0,

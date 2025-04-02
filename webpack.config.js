@@ -1,4 +1,5 @@
 const path = require('path');
+const webpack = require('webpack');
 
 module.exports = {
   entry: './src/index.ts',
@@ -20,6 +21,11 @@ module.exports = {
     },
   },
   mode: 'production',
+  plugins: [
+    new webpack.DefinePlugin({
+      'process.env.VERSION': JSON.stringify(process.env.npm_package_version),
+    }),
+  ],
   output: {
     filename: 'webrtcperf.js',
     path: path.resolve(__dirname, 'dist'),

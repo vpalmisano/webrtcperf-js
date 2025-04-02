@@ -10,7 +10,8 @@
     "url": "https://github.com/vpalmisano"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "version": "1.0.0",
   "main": "dist/webrtcperf.js",
@@ -35,6 +36,7 @@
   },
   "scripts": {
     "prepare": "webpack",
+    "prepublishOnly": "yarn lint",
     "build": "webpack",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",

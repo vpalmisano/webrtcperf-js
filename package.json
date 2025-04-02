@@ -3,7 +3,7 @@
   "description": "WebRTCPerf javascript browser library",
   "repository": {
     "type": "git",
-    "url": "https://github.com/vpalmisano/webrtcperf-js.git"
+    "url": "git+https://github.com/vpalmisano/webrtcperf-js.git"
   },
   "author": {
     "name": "Vittorio Palmisano",

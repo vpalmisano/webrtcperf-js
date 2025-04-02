@@ -180,7 +180,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
     super.close()
   }
 
-  private async createOfferOverride(options: RTCOfferOptions) {
+  async createOfferOverride(options: RTCOfferOptions) {
     let offer = await super.createOffer(options)
     if (overrides.createOffer) {
       offer = overrides.createOffer(offer as RTCSessionDescriptionInit)

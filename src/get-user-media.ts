@@ -1,7 +1,6 @@
 import { config, enabledForSession, log, overrides, params, sleep } from './common'
 import { applyAudioTimestampWatermark } from './e2e-audio-stats'
 import { applyVideoTimestampWatermark } from './e2e-video-stats'
-import { startFakeScreenshare } from './screenshare'
 
 async function applyGetDisplayMediaCrop(mediaStream: MediaStream) {
   if (!config.GET_DISPLAY_MEDIA_CROP) return

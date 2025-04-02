@@ -8,7 +8,7 @@ tool to capture the RTC logs and run page inspection/automation.
 The library can be used directly into a regular Google Chome browser session.
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/)
-2. Install the [User Script](https://gist.githubusercontent.com/vpalmisano/ada9e44c88fc83273877e0933b0d8d44/raw/webrtcperf.user.js)
+2. Install the [User Script](/webrtcperf.user.js)
 
 ### Examples
 Access the RTC PeerConnections objects:

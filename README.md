@@ -27,3 +27,10 @@ webrtcperf.config.VIDEO_URL = '<video URL>'
 webrtcperf.config.AUDIO_URL = '<audio URL>'
 ```
 
+Use a fake screenshare as getDisplayMedia source:
+```js
+await webrtcperf.startFakeScreenshare()
+webrtcperf.overrides.getDisplayMedia = constraints => Object.assign(constraints, { preferCurrentTab: true })
+
+# Start a screensharing with getDisplayMedia
+```

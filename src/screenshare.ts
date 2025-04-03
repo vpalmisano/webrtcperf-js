@@ -28,18 +28,19 @@ export const startFakeScreenshare = async (opts = params.fakeScreenshare || {}) 
   if (document.querySelector('#webrtcperf-fake-screenshare')) {
     return
   }
+  const bodyChildren = document.body.children.length
   log(
-    `FakeScreenshare start: embed=${embed} slides=${slides} animationDuration=${animationDuration} delay=${delay} width=${width} height=${height}`,
+    `FakeScreenshare start: embed=${embed} slides=${slides} animationDuration=${animationDuration} delay=${delay} width=${width} height=${height} bodyChildren=${bodyChildren}`,
   )
   const wrapper = document.createElement('div')
   wrapper.setAttribute('id', 'webrtcperf-fake-screenshare')
   wrapper.setAttribute(
     'style',
-    `all: unset; position: fixed; top: 0; left: 0; width: ${width}px; height: ${height}px; z-index: ${config.USE_FAKE_MEDIA ? '-1' : '1'}; background-color: black; isolation: isolate; transform-style: flat;`,
+    `all: unset; position: fixed; top: 0; left: 0; width: ${width}px; height: ${height}px; z-index: ${bodyChildren ? '-1' : '1'}; background-color: black; isolation: isolate; transform-style: flat;`,
   )
   document.body.appendChild(wrapper)
 
-  if (config.USE_FAKE_MEDIA) {
+  if (bodyChildren) {
     config.GET_DISPLAY_MEDIA_CROP = '#webrtcperf-fake-screenshare'
   }
 
@@ -104,7 +105,6 @@ export const startFakeScreenshare = async (opts = params.fakeScreenshare || {}) 
 
     let cur = 0
     advanceSlide = async () => {
-      log(`advanceSlide embed: ${cur}/${slides}`)
       if (cur >= slides) {
         await window.webrtcperf_keyPress('Home')
         cur = 0
@@ -161,7 +161,6 @@ export const startFakeScreenshare = async (opts = params.fakeScreenshare || {}) 
 
     let cur = 0
     advanceSlide = async () => {
-      log(`advanceSlide: ${cur}/${slides}`)
       const next = cur === slidesElements.length - 1 ? 0 : cur + 1
       let timer = null
       if (animationDuration > 0 && drawTimestamp) {

@@ -43,7 +43,6 @@ export const config = {
   GET_DISPLAY_MEDIA_CROP: '',
   VIDEO_URL: '',
   AUDIO_URL: '',
-  USE_FAKE_MEDIA: false,
   SAVE_MEDIA_URL: '',
   GET_CAPABILITIES_DISABLED_VIDEO_CODECS: [] as string[],
 }

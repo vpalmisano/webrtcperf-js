@@ -180,7 +180,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
     super.close()
   }
 
-  async createOfferOverride(options: RTCOfferOptions) {
+  createOffer = (async (options?: RTCOfferOptions) => {
     let offer = await super.createOffer(options)
     if (overrides.createOffer) {
       offer = overrides.createOffer(offer as RTCSessionDescriptionInit)
@@ -189,8 +189,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
       this.debug(`createOffer`, { options, offer })
     }
     return offer
-  }
-  createOffer = this.createOfferOverride as typeof RTCPeerConnection.prototype.createOffer
+  }) as typeof RTCPeerConnection.prototype.createOffer
 
   setLocalDescription(description: RTCSessionDescriptionInit) {
     this.debug(`setLocalDescription`, description)

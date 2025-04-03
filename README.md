@@ -25,12 +25,12 @@ Use a video as getUserMedia default source:
 ```js
 webrtcperf.config.VIDEO_URL = '<video URL>'
 webrtcperf.config.AUDIO_URL = '<audio URL>'
+// Start audio or video with getUserMedia
 ```
 
 Use a fake screenshare as getDisplayMedia source:
 ```js
 await webrtcperf.startFakeScreenshare()
 webrtcperf.overrides.getDisplayMedia = constraints => Object.assign(constraints, { preferCurrentTab: true })
-
-# Start a screensharing with getDisplayMedia
+// Start a screensharing with getDisplayMedia
 ```

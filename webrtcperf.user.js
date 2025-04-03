@@ -9,7 +9,7 @@
 // @match        https://*/*
 // @run-at       document-start
 // @icon         https://raw.githubusercontent.com/vpalmisano/webrtcperf/refs/heads/devel/media/logo.svg
-// @resource     JS https://unpkg.com/@vpalmisano/webrtcperf-js@1.0.3/dist/webrtcperf.js
+// @resource     JS https://unpkg.com/@vpalmisano/webrtcperf-js@1.0.4/dist/webrtcperf.js
 // @grant        GM_getResourceText
 // ==/UserScript==
 const element = document.createElement('script');

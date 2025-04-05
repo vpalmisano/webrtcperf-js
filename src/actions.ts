@@ -4,7 +4,7 @@ import { setVideoStartFrameTime } from './e2e-video-stats'
 import { getIndex, params } from './common'
 import { elapsedTime } from './common'
 import { enabledForSession, log } from './common'
-import { saveTransceiversTracks, stopSaveTransceiversTracks } from './peer-connection'
+import { saveTransceiversTracks, setTransceiversTracks, stopSaveTransceiversTracks } from './peer-connection'
 import { syncFakeTracks } from './get-user-media'
 
 let actionsStarted = false
@@ -17,6 +17,7 @@ const ACTIONS = {
   saveTransceiversTracks,
   stopSaveTransceiversTracks,
   syncFakeTracks,
+  setTransceiversTracks,
 }
 
 export async function setupActions() {

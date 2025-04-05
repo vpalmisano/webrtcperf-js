@@ -41,6 +41,7 @@ export const config = {
   VIDEO_HEIGHT: 1080,
   VIDEO_FRAMERATE: 30,
   GET_DISPLAY_MEDIA_CROP: '',
+  MEDIA_URL: '',
   VIDEO_URL: '',
   AUDIO_URL: '',
   SAVE_MEDIA_URL: '',
@@ -75,6 +76,22 @@ export const params = {
 if ('webrtcperf' in window && window.webrtcperf) {
   Object.assign(config, window.webrtcperf.config || {})
   Object.assign(params, window.webrtcperf.params || {})
+}
+
+if (localStorage.getItem('webrtcperf.config')) {
+  try {
+    Object.assign(config, JSON.parse(localStorage.getItem('webrtcperf.config') || '{}') || {})
+  } catch (e) {
+    console.error('Error parsing webrtcperf.config', e)
+  }
+}
+
+if (localStorage.getItem('webrtcperf.params')) {
+  try {
+    Object.assign(params, JSON.parse(localStorage.getItem('webrtcperf.params') || '{}') || {})
+  } catch (e) {
+    console.error('Error parsing webrtcperf.params', e)
+  }
 }
 
 /**

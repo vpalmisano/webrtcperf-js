@@ -66,32 +66,49 @@ export const collectMediaTracks = (mediaStream: MediaStream, onEnded?: (track: M
   const aTracks = mediaStream.getAudioTracks()
   if (aTracks.length) {
     const track = aTracks[0]
-    /* webrtcperf.log(`MediaStream new audio track ${track.id}`); */
-    track.addEventListener('ended', () => audioTracks.delete(track))
-    audioTracks.add(track)
+    if (track.readyState !== 'ended') {
+      /* webrtcperf.log(`MediaStream new audio track ${track.id}`); */
+      track.addEventListener(
+        'ended',
+        () => {
+          audioTracks.delete(track)
+          if (onEnded) {
+            onEnded(track)
+          }
+        },
+        { once: true },
+      )
+      audioTracks.add(track)
+    }
   }
   const vTracks = mediaStream.getVideoTracks()
   if (vTracks.length) {
     const track = vTracks[0]
-    /* const settings = track.getSettings() */
-    /* webrtcperf.log(`MediaStream new video track ${track.id} ${
-      settings.width}x${settings.height} ${settings.frameRate}fps`); */
-    const nativeApplyConstraints = track.applyConstraints.bind(track)
-    track.applyConstraints = (constraints) => {
-      log(`applyConstraints ${track.id} (${track.kind})`, { track, constraints })
-      if (overrides.trackApplyConstraints) {
-        constraints = overrides.trackApplyConstraints(track, constraints)
-        log(`applyConstraints ${track.id} (${track.kind}) override:`, { track, constraints })
+    if (track.readyState !== 'ended') {
+      /* const settings = track.getSettings() */
+      /* webrtcperf.log(`MediaStream new video track ${track.id} ${
+        settings.width}x${settings.height} ${settings.frameRate}fps`); */
+      const nativeApplyConstraints = track.applyConstraints.bind(track)
+      track.applyConstraints = (constraints) => {
+        log(`applyConstraints ${track.id} (${track.kind})`, { track, constraints })
+        if (overrides.trackApplyConstraints) {
+          constraints = overrides.trackApplyConstraints(track, constraints)
+          log(`applyConstraints ${track.id} (${track.kind}) override:`, { track, constraints })
+        }
+        return nativeApplyConstraints(constraints)
       }
-      return nativeApplyConstraints(constraints)
+      track.addEventListener(
+        'ended',
+        () => {
+          videoTracks.delete(track)
+          if (onEnded) {
+            onEnded(track)
+          }
+        },
+        { once: true },
+      )
+      videoTracks.add(track)
     }
-    track.addEventListener('ended', () => {
-      videoTracks.delete(track)
-      if (onEnded) {
-        onEnded(track)
-      }
-    })
-    videoTracks.add(track)
   }
   cleanupClosedMediaTracks()
   // Log applyConstraints calls.
@@ -108,35 +125,27 @@ export const collectMediaTracks = (mediaStream: MediaStream, onEnded?: (track: M
 }
 
 export class FakeStream {
-  kind: 'audio' | 'video'
-  refcount = 0
-  element: HTMLVideoElement | HTMLAudioElement
-  trackPromise: Promise<MediaStreamTrack>
+  private refcount = 0
+  private readonly element: HTMLVideoElement | HTMLAudioElement
+  private readonly streamPromise: Promise<MediaStream>
 
-  constructor(kind: 'audio' | 'video') {
-    log(`[FakeStream] new ${kind}`)
-    this.kind = kind
-    this.element = document.createElement(this.kind)
-    this.element.src = this.kind === 'video' ? config.VIDEO_URL : config.AUDIO_URL
+  constructor(url: string, elementType = 'video') {
+    log(`[FakeStream] new ${url}`)
+    this.element = document.createElement(elementType === 'video' ? 'video' : 'audio')
+    this.element.src = url
     this.element.loop = true
     this.element.crossOrigin = 'anonymous'
     this.element.autoplay = true
-    this.element.muted = this.kind === 'video'
-    this.trackPromise = this.createStream().then((stream) => {
-      const track = (stream as MediaStream).getTracks().find((track) => track.kind === kind)
-      if (!track) {
-        throw new Error(`[FakeStream] track ${kind} not found`)
-      }
-      return track
-    })
+    this.element.muted = true
+    this.streamPromise = this.createStream()
   }
 
-  createStream() {
-    return new Promise((resolve, reject) => {
+  private createStream() {
+    return new Promise<MediaStream>((resolve, reject) => {
       this.element.addEventListener(
         'loadeddata',
         () => {
-          log(`[FakeStream] Create fake ${this.kind} stream done`)
+          log(`[FakeStream] Create stream done`)
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           resolve((this.element as any).captureStream() as MediaStream)
         },
@@ -145,7 +154,7 @@ export class FakeStream {
       this.element.addEventListener(
         'error',
         (err) => {
-          log(`[FakeStream] Create fake ${this.kind} stream error:`, err)
+          log(`[FakeStream] Create stream error:`, err)
           reject(err)
         },
         { once: true },
@@ -154,15 +163,40 @@ export class FakeStream {
     })
   }
 
-  incRefcount() {
+  getTrack(kind: 'audio' | 'video') {
+    return this.streamPromise.then((stream) => {
+      const track = stream.getTracks().find((track) => track.kind === kind)
+      if (!track) {
+        throw new Error(`[FakeStream] track ${kind} not found`)
+      }
+      const clonedTrack = track.clone()
+      const clonedTrackStop = clonedTrack.stop.bind(clonedTrack)
+      clonedTrack.stop = () => {
+        clonedTrackStop()
+        this.decRefcount()
+      }
+      this.incRefcount()
+      log(`[FakeStream] getTrack ${kind}: ${clonedTrack.id} count: ${this.refcount}`)
+      return clonedTrack
+    })
+  }
+
+  sync(currentTime?: number) {
+    if (currentTime !== undefined) {
+      this.element.currentTime = currentTime
+    }
+    this.element.play()
+  }
+
+  private incRefcount() {
     this.refcount++
     if (this.element.paused) {
       this.element.play()
     }
   }
 
-  decRefcount() {
-    this.refcount--
+  private decRefcount() {
+    this.refcount = Math.max(this.refcount - 1, 0)
     if (this.refcount === 0) {
       this.element.pause()
     }
@@ -170,6 +204,7 @@ export class FakeStream {
 }
 
 export const fakeStreams = {
+  media: null as FakeStream | null,
   audio: null as FakeStream | null,
   video: null as FakeStream | null,
 }
@@ -181,31 +216,24 @@ export const fakeStreams = {
 export function syncFakeTracks(currentTime?: number) {
   for (const kind of ['audio', 'video']) {
     const stream = fakeStreams[kind as keyof typeof fakeStreams]
-    if (stream) {
-      if (currentTime !== undefined) {
-        stream.element.currentTime = currentTime
-      }
-      stream.element.play()
-    }
+    stream?.sync(currentTime)
   }
+  fakeStreams.media?.sync(currentTime)
 }
 
-export const getFakeTrack = async (kind: keyof typeof fakeStreams) => {
-  let stream = fakeStreams[kind]
+export const getFakeTrack = async (kind: 'audio' | 'video') => {
+  if (config.MEDIA_URL && !fakeStreams.media) {
+    fakeStreams.media = new FakeStream(config.MEDIA_URL)
+  } else if (kind === 'video' && config.VIDEO_URL && !fakeStreams.video) {
+    fakeStreams.video = new FakeStream(config.VIDEO_URL, kind)
+  } else if (kind === 'audio' && config.AUDIO_URL && !fakeStreams.audio) {
+    fakeStreams.audio = new FakeStream(config.AUDIO_URL, kind)
+  }
+  const stream = fakeStreams.media || (kind === 'video' ? fakeStreams.video : fakeStreams.audio)
   if (!stream) {
-    stream = new FakeStream(kind)
-    fakeStreams[kind] = stream
+    throw new Error(`[getFakeTrack] stream not found`)
   }
-  const track = await stream.trackPromise
-  stream.incRefcount()
-  const clonedTrack = track.clone()
-  log(`[getFakeTrack] new ${kind} track ${clonedTrack.id} count: ${stream.refcount}`)
-  const clonedTrackStop = clonedTrack.stop.bind(clonedTrack)
-  clonedTrack.stop = () => {
-    clonedTrackStop()
-    stream.decRefcount()
-  }
-  return clonedTrack
+  return stream.getTrack(kind)
 }
 
 if ('getUserMedia' in navigator) {
@@ -224,7 +252,7 @@ if ('getUserMedia' in navigator) {
 
 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
   const nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
-  navigator.mediaDevices.getUserMedia = async function (constraints, ...args) {
+  navigator.mediaDevices.getUserMedia = async function (constraints) {
     log(`getUserMedia:`, JSON.stringify(constraints))
     if (overrides.getUserMedia) {
       constraints = overrides.getUserMedia(constraints)
@@ -236,18 +264,18 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
 
     let mediaStream = new MediaStream()
 
-    if (constraints?.audio && config.AUDIO_URL) {
+    if (constraints?.audio && (config.AUDIO_URL || config.MEDIA_URL)) {
       const audioTrack = await getFakeTrack('audio')
       mediaStream.addTrack(audioTrack)
     }
-    if (constraints?.video && config.VIDEO_URL) {
+    if (constraints?.video && (config.VIDEO_URL || config.MEDIA_URL)) {
       const videoTrack = await getFakeTrack('video')
       mediaStream.addTrack(videoTrack)
     }
     if (mediaStream.getTracks().length > 0) {
       syncFakeTracks(0)
     } else {
-      mediaStream = await nativeGetUserMedia(constraints, ...args)
+      mediaStream = await nativeGetUserMedia(constraints)
     }
 
     if (overrides.getUserMediaStream) {
@@ -272,7 +300,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
 
 if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
   const nativeGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices)
-  navigator.mediaDevices.getDisplayMedia = async function (constraints, ...args) {
+  navigator.mediaDevices.getDisplayMedia = async function (constraints) {
     log(`getDisplayMedia:`, JSON.stringify(constraints))
 
     if ('webrtcperf_startFakeScreenshare' in window) {
@@ -286,7 +314,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
     if (params.getDisplayMediaWaitTime > 0) {
       await sleep(params.getDisplayMediaWaitTime)
     }
-    let mediaStream = await nativeGetDisplayMedia(constraints, ...args)
+    let mediaStream = await nativeGetDisplayMedia(constraints)
     await applyGetDisplayMediaCrop(mediaStream)
     if (overrides.getDisplayMediaStream) {
       try {
@@ -317,9 +345,9 @@ if (navigator.mediaDevices && 'setCaptureHandleConfig' in navigator.mediaDevices
 if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
   const NativeEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
   navigator.mediaDevices.enumerateDevices = async () => {
-    if (config.VIDEO_URL || config.AUDIO_URL) {
+    if (config.VIDEO_URL || config.AUDIO_URL || config.MEDIA_URL) {
       const devices = [] as MediaDeviceInfo[]
-      if (config.VIDEO_URL) {
+      if (config.VIDEO_URL || config.MEDIA_URL) {
         devices.push({
           deviceId: 'webrtcperf-video',
           kind: 'videoinput',
@@ -327,7 +355,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
           groupId: 'webrtcperf',
         } as MediaDeviceInfo)
       }
-      if (config.AUDIO_URL) {
+      if (config.AUDIO_URL || config.MEDIA_URL) {
         devices.push({
           deviceId: 'webrtcperf-audio',
           kind: 'audioinput',

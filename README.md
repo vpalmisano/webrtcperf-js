@@ -23,8 +23,7 @@ await webrtcperf.collectPeerConnectionStats(true)
 
 Use a video as getUserMedia default source:
 ```js
-webrtcperf.config.VIDEO_URL = '<video URL>'
-webrtcperf.config.AUDIO_URL = '<audio URL>'
+webrtcperf.config.MEDIA_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
 // Start audio or video with getUserMedia
 ```
 

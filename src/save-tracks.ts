@@ -238,17 +238,46 @@ function getSaveFileWorker() {
 }
 
 /**
- * It saves the media track to a file.
+ * Saves the media track to file. Audio tracks are saved as a raw float32 array,
+ * video tracks are saved as VP8 encoded packets in an IVF container.
+ * The file is sent to the server defined in `config.SAVE_MEDIA_URL` using a WebSocket connection.
  * @param {MediaStreamTrack} track The media track to save.
  * @param {'send'|'recv'} sendrecv If 'send', it is a local track. If 'recv', it is a remote track.
  * @param {Number} enableStart If greater than 0, the track is enabled after this time in milliseconds.
  * @param {Number} enableEnd If greater than 0, the track is disabled after this time in milliseconds.
- * @param {Number} quality The MJPEG video quality.
- * @param {Number} x The video crop x.
- * @param {Number} y The video crop y.
- * @param {Number} width The video crop width.
- * @param {Number} height The video crop height.
+ * @param {Number} x If greater than 0, the video is cropped to this x coordinate.
+ * @param {Number} y If greater than 0, the video is cropped to this y coordinate.
+ * @param {Number} width If greater than 0, the video is cropped to this width.
+ * @param {Number} height If greater than 0, the video is cropped to this height.
  * @param {Number} frameRate The video frame rate.
+ *
+ * Examples
+ * --------
+ *
+ * Run a simple websocket server:
+ * ```javascript
+ * const ws = require('ws')
+ * const fs = require('fs')
+ * const wss = new ws.Server({ port: 8080 })
+ * wss.on('connection', (ws, req) => {
+ *   const query = req.url.split('?')[1]
+ *   const filename = new URLSearchParams(query).get('filename')
+ *   const file = fs.createWriteStream(filename)
+ *   console.log(`Saving media to ${filename}`)
+ *   ws.on('message', message => file.write(message))
+ *   ws.on('close', () => {
+ *     console.log(`done saving ${filename}`)
+ *     file.end()
+ *   })
+ * })
+ * ```
+ *
+ * Run the test:
+ * ```javascript
+ * webrtcperf.config.SAVE_MEDIA_URL = 'ws://localhost:8080'
+ * await saveMediaTrack(track, 'send')
+ * ```
+ * The file will sent to the server as `Participant-000000_send_<track.id>.ivf.raw`.
  */
 export async function saveMediaTrack(
   track: MediaStreamTrack,
@@ -284,7 +313,7 @@ export async function saveMediaTrack(
   }
 
   const filename = `${overrides.getParticipantNameForSave(sendrecv, track)}${kind === 'audio' ? '.f32le.raw' : '.ivf.raw'}`
-  const url = `${config.SAVE_MEDIA_URL}&filename=${filename}`
+  const url = `${config.SAVE_MEDIA_URL}${config.SAVE_MEDIA_URL.includes('?') ? '&' : '?'}filename=${filename}`
 
   log(`saveMediaTrack ${filename}`)
   getSaveFileWorker().postMessage(

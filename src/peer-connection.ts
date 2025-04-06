@@ -19,10 +19,13 @@ export let peerConnectionsFailed = 0
 export let peerConnectionsClosed = 0
 export const connectionTimer = new OnOffTimer()
 
+/**
+ * Map of peer connections created.
+ */
 export const PeerConnections = new Map<number, RTCPeerConnection>()
 
 /**
- * PeerConnections created stats.
+ * Measured stats for peer connections delay.
  */
 export const peerConnectionsDelayStats = new MeasuredStats({ ttl: 15 })
 

@@ -1,15 +1,38 @@
 import { log } from './common'
 
-const requestOverrides = new Map<string, (response: Response) => Promise<Response>>()
+/**
+ * The type of the request override function.
+ * @param {Response} response The response to override.
+ * @returns {Promise<Response>} The overridden response.
+ */
+export type RequestOverride = (response: Response) => Promise<Response>
 
-export function addRequestOverride(url: string, override: (response: Response) => Promise<Response>) {
+const requestOverrides = new Map<string, RequestOverride>()
+
+/**
+ * Adds a request override for a given URL.
+ * @param {string} url The URL to override (regex supported).
+ * @param {RequestOverride} override The override function.
+ */
+export function addRequestOverride(url: string, override: RequestOverride) {
   requestOverrides.set(url, override)
 }
 
+/**
+ * Removes a request override for a given URL.
+ * @param {string} url The URL override to remove.
+ */
 export function removeRequestOverride(url: string) {
   requestOverrides.delete(url)
 }
 
+/**
+ * Adds a JSON request override for a given URL.
+ * @param {string} url The URL to override (regex supported).
+ * @param {any} override The override javascript object.
+ * Any fetch response with a `Content-Type` header of `application/json` will
+ * be merged with the given javascript object.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function addJsonRequestOverride(url: string, override: any) {
   addRequestOverride(url, async (response: Response) => {

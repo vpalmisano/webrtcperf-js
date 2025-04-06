@@ -24,12 +24,19 @@ async function applyGetDisplayMediaCrop(mediaStream: MediaStream) {
   }
 }
 
-export const audioTracks = new Set<MediaStreamTrack>()
-export const videoTracks = new Set<MediaStreamTrack>()
+/**
+ * Set of audio tracks collected from getUserMedia or getDisplayMedia.
+ */
+const audioTracks = new Set<MediaStreamTrack>()
 
 /**
- * getActiveAudioTracks
- * @return {*} The active audio tracks array.
+ * Set of video tracks collected from getUserMedia.
+ */
+const videoTracks = new Set<MediaStreamTrack>()
+
+/**
+ * Get the active audio tracks collected from getUserMedia or getDisplayMedia.
+ * @return {MediaStreamTrack[]} The active audio tracks array.
  */
 export const getActiveAudioTracks = () => {
   cleanupClosedMediaTracks()
@@ -37,15 +44,18 @@ export const getActiveAudioTracks = () => {
 }
 
 /**
- * getActiveVideoTracks
- * @return {*} The active video tracks array.
+ * Get the active video tracks collected from getUserMedia or getDisplayMedia.
+ * @return {MediaStreamTrack[]} The active video tracks array.
  */
 export const getActiveVideoTracks = () => {
   cleanupClosedMediaTracks()
   return [...videoTracks.values()]
 }
 
-export const cleanupClosedMediaTracks = () => {
+/**
+ * Cleanup the closed media tracks.
+ */
+function cleanupClosedMediaTracks() {
   for (const track of audioTracks.values()) {
     if (track.readyState === 'ended') {
       audioTracks.delete(track)
@@ -62,7 +72,7 @@ export const cleanupClosedMediaTracks = () => {
  * It collects MediaTracks from MediaStream.
  * @param {MediaStream} mediaStream
  */
-export const collectMediaTracks = (mediaStream: MediaStream, onEnded?: (track: MediaStreamTrack) => void) => {
+function collectMediaTracks(mediaStream: MediaStream, onEnded?: (track: MediaStreamTrack) => void) {
   const aTracks = mediaStream.getAudioTracks()
   if (aTracks.length) {
     const track = aTracks[0]
@@ -210,7 +220,7 @@ export const fakeStreams = {
 }
 
 /**
- * Synchronize all the created fake tracks.
+ * Synchronizes all the created fake tracks.
  * @param {number | undefined} [currentTime] - If specified, the current time to set.
  */
 export function syncFakeTracks(currentTime?: number) {

@@ -7,6 +7,16 @@ import { enabledForSession, log } from './common'
 import { saveTransceiversTracks, setTransceiversTracks, stopSaveTransceiversTracks } from './peer-connection'
 import { syncFakeTracks } from './get-user-media'
 
+export type Action = {
+  name: string
+  at: number
+  every: number
+  times: number
+  index: number
+  params: unknown[]
+  relaxedAt: number
+}
+
 let actionsStarted = false
 
 const ACTIONS = {

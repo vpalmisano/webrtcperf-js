@@ -1,17 +1,61 @@
 import { enabledForSession, overrides, log, params, config } from './common'
 
+/**
+ * Parameters for the fake screenshare.
+ */
 export type FakeScreenshareParams = {
+  /**
+   * If set, the fake screenshare will use an iframe to display the embed URL
+   * instead of a list of URLs defined in the `urls` parameter.
+   * @default ''
+   */
   embed: string
+  /**
+   * The number of slides to display.
+   * @default 4
+   */
   slides: number
+  /**
+   * The list of URLs to display as slides.
+   * If pointing to an image, it will be displayed as a static image,
+   * otherwise, it will be displayed as embedded content.
+   * If unset, a list of random images will be loaded from https://picsum.photos
+   * @default []
+   */
   urls: string[]
+  /**
+   * The delay in milliseconds between slides.
+   * @default 5000
+   */
   delay: number
+  /**
+   * The duration of the transition animation.
+   * @default 1000
+   */
   animationDuration: number
+  /**
+   * The width of the fake screenshare.
+   * @default 1920
+   */
   width: number
+  /**
+   * The height of the fake screenshare.
+   * @default 1080
+   */
   height: number
+  /**
+   * If set, a pointer animation will be added to the fake screenshare with
+   * the given duration in milliseconds.
+   * @default 0
+   */
   pointerAnimation: number
 }
 
-export const startFakeScreenshare = async (opts = params.fakeScreenshare || {}) => {
+/**
+ * Start the fake screenshare.
+ * @param opts - The parameters for the fake screenshare.
+ */
+export async function startFakeScreenshare(opts = {} as FakeScreenshareParams) {
   const { embed, slides, urls, animationDuration, delay, width, height, pointerAnimation } = Object.assign(
     {
       embed: '',
@@ -95,6 +139,7 @@ export const startFakeScreenshare = async (opts = params.fakeScreenshare || {}) 
   // Slides animation.
   let advanceSlide = null
   if (embed) {
+    const isGoogleSlides = embed.startsWith('https://docs.google.com/presentation/d/')
     const el = document.createElement('iframe')
     el.setAttribute('src', embed)
     el.setAttribute('width', width.toString())
@@ -106,11 +151,19 @@ export const startFakeScreenshare = async (opts = params.fakeScreenshare || {}) 
     let cur = 0
     advanceSlide = async () => {
       if (cur >= slides) {
-        await window.webrtcperf_keyPress('Home')
         cur = 0
+        if (isGoogleSlides) {
+          el.contentWindow?.location.replace(embed + `#slide=${cur}`)
+        } else if ('webrtcperf_keyPress' in window) {
+          await window.webrtcperf_keyPress('Home')
+        }
       } else {
-        await window.webrtcperf_keypressText('iframe', ' ')
         cur++
+        if (isGoogleSlides) {
+          el.contentWindow?.location.replace(embed + `#slide=${cur}`)
+        } else if ('webrtcperf_keyPress' in window) {
+          await window.webrtcperf_keyPress('Right')
+        }
       }
     }
   } else {
@@ -185,7 +238,10 @@ export const startFakeScreenshare = async (opts = params.fakeScreenshare || {}) 
   loopIteration()
 }
 
-export const stopFakeScreenshare = () => {
+/**
+ * Stop the fake screenshare.
+ */
+export function stopFakeScreenshare() {
   const wrapper = document.querySelector('#webrtcperf-fake-screenshare')
   if (!wrapper) return
   wrapper.remove()

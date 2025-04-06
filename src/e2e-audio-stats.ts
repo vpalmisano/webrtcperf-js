@@ -1,4 +1,4 @@
-import { enabledForSession, log, params } from './common'
+import { log } from './common'
 import { MeasuredStats } from './stats'
 
 type GgwaveParameters = {

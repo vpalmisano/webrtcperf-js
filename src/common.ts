@@ -24,43 +24,145 @@ export type EnableValue = boolean | string | number
 
 export const VERSION = process.env.VERSION || 'dev'
 
+/**
+ * Configuration for the webrtcperf tool.
+ */
 export const config = {
+  /**
+   * The timestamp of the start of the webrtcperf test or the page load timestamp.
+   */
   START_TIMESTAMP: Date.now(),
+  /**
+   * The index of the webrtcperf participant.
+   */
   WEBRTC_PERF_INDEX: 0,
+  /**
+   * The page URL of the webrtcperf test.
+   */
   WEBRTC_PERF_URL: '',
+  /**
+   * The width of the fake video.
+   */
   VIDEO_WIDTH: 1920,
+  /**
+   * The height of the fake video.
+   */
   VIDEO_HEIGHT: 1080,
+  /**
+   * The frame rate of the fake video.
+   */
   VIDEO_FRAMERATE: 30,
+  /**
+   * The crop target for the getDisplayMedia call.
+   */
   GET_DISPLAY_MEDIA_CROP: '',
+  /**
+   * The URL of the fake media.
+   */
   MEDIA_URL: '',
+  /**
+   * The URL of the fake media (video track only).
+   */
   VIDEO_URL: '',
+  /**
+   * The URL of the fake media (audio track only).
+   */
   AUDIO_URL: '',
+  /**
+   * The URL of the WebSocket server to save the the media content.
+   */
   SAVE_MEDIA_URL: '',
+  /**
+   * List of video codecs to disable overriding the SDP capabilities.
+   */
   GET_CAPABILITIES_DISABLED_VIDEO_CODECS: [] as string[],
 }
 
+/**
+ * Parameters for the webrtcperf tool.
+ */
 export const params = {
+  /**
+   * List of actions to perform.
+   */
   actions: [] as Action[],
+  /**
+   * Enable video stats.
+   */
   enableVideoStats: false as EnableValue,
+  /**
+   * It set, the getUserMedia will wait for the specified time before returning.
+   */
   getUserMediaWaitTime: 0 as number,
+  /**
+   * It set, the getDisplayMedia will wait for the specified time before returning.
+   */
   getDisplayMediaWaitTime: 0 as number,
+  /**
+   * It set, a watermark with the current timestamp will be added to the sent audio tracks.
+   * It will recognize the watermark on the received audio tracks and collect the delay
+   * into the `audioEndToEndDelayStats` object.
+   */
   timestampWatermarkAudio: false as EnableValue,
+  /**
+   * It set, a watermark with the current timestamp will be added to the sent video tracks.
+   * It will recognize the watermark on the received video tracks and collect the delay
+   * into the `videoEndToEndDelayStats` object.
+   */
   timestampWatermarkVideo: false as EnableValue,
+  /**
+   * It set, the fake screenshare will be created with the specified parameters.
+   */
   fakeScreenshare: null as FakeScreenshareParams | null,
+  /**
+   * It set, a grid will be drawn on the video track.
+   */
   drawWatermarkGrid: false,
   timestampInsertableStreams: false,
+  /**
+   * It set, the peer connection will run with additional debug logs.
+   */
   peerConnectionDebug: false as EnableValue,
-  // Save tracks
+  /**
+   * It set, the RTCPeerConnection sent video tracks will be saved.
+   */
   saveSendVideoTrack: false as EnableValue,
-  saveVideoTrackEnableStart: 0 as number,
-  saveVideoTrackEnableEnd: 0 as number,
+  /**
+   * It set, the RTCPeerConnection sent audio tracks will be saved.
+   */
   saveSendAudioTrack: false as EnableValue,
+  /**
+   * The time in milliseconds after which the RTCPeerConnection sent video track will be enabled.
+   */
+  saveVideoTrackEnableStart: 0 as number,
+  /**
+   * The time in milliseconds after which the RTCPeerConnection sent video track will be disabled.
+   */
+  saveVideoTrackEnableEnd: 0 as number,
+  /**
+   * The time in milliseconds after which the RTCPeerConnection sent audio track will be enabled.
+   */
   saveAudioTrackEnableStart: 0 as number,
+  /**
+   * The time in milliseconds after which the RTCPeerConnection sent audio track will be disabled.
+   */
   saveAudioTrackEnableEnd: 0 as number,
+  /**
+   * It set, the RTCPeerConnection received video tracks will be saved.
+   */
   saveRecvVideoTrack: false as EnableValue,
+  /**
+   * If set, the RTCPeerConnection received audio tracks will be saved.
+   */
   saveRecvAudioTrack: false as EnableValue,
-  // Playout delay hint
+  /**
+   * If set, all the created RTCRtpReceivers will be configured with the specified playout delay hint (in seconds).
+   */
   playoutDelayHint: null as number | null,
+  /**
+   * If set, all the created RTCRtpReceivers will be configured with the specified jitter buffer target (in seconds).
+   * It can be configured for each track kind or bo
+   */
   jitterBufferTarget: null as number | { audio: number | null; video: number | null } | null,
 }
 

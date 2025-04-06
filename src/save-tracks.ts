@@ -275,7 +275,7 @@ function getSaveFileWorker() {
  * Run the test:
  * ```javascript
  * webrtcperf.config.SAVE_MEDIA_URL = 'ws://localhost:8080'
- * await saveMediaTrack(track, 'send')
+ * await saveMediaTrack(videoTrack, 'send')
  * ```
  * The file will sent to the server as `Participant-000000_send_<track.id>.ivf.raw`.
  */

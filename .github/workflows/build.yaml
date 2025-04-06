@@ -6,7 +6,7 @@ on:
     tags:
     - 'v*'
     branches:
-    - 'devel'
+    - 'main'
     paths:
     - 'src/*'
     - '*.json'

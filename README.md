@@ -4,7 +4,7 @@
 A browser library used by the [webrtcperf](https://github.com/vpalmisano/webrtcperf)
 tool to capture the RTC logs and run page inspection/automation. It can also be
 used stand-alone importing the javascript package into the page before loading
-the other page javascript sources.
+the other javascript sources.
 It contains some utilities to debug the page RTC connections, the getUserMedia and
 getDisplayMedia, evaluate the end-to-end delay, etc. 
 

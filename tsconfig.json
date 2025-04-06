@@ -8,5 +8,17 @@
       "forceConsistentCasingInFileNames": true,
       "outDir": "./dist"
     },
-    "include": ["src"]
+    "include": ["src"],
+    "typedocOptions": {
+      "entryPoints": ["./src"],
+      "entryPointStrategy": "expand",
+      "out": "./_docs",
+      "readme": "README.md",
+      "projectDocuments": "./docs",
+      "theme": "default",
+      "plugin": ["typedoc-plugin-mdn-links"],
+      "excludeNotDocumented": true,
+      "hideGenerator": true,
+      "cleanOutputDir": true
+    }
 }

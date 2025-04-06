@@ -59,24 +59,21 @@ function convertTypedArray(src: any, type: any) {
   return new type(buffer)
 }
 
-export let ggwave: Ggwave | null = null
-
-if (enabledForSession(params.timestampWatermarkAudio)) {
-  document.addEventListener('DOMContentLoaded', async () => {
-    try {
-      ggwave = await ggwave_factory()
-      ggwave.disableLog()
-    } catch (e) {
-      log(`ggwave error: ${e}`)
-    }
-  })
-}
-
+let ggwavePromise: Promise<Ggwave> | null = null
 let audioContext = null as AudioContext | null
 let audioDestination = null as MediaStreamAudioDestinationNode | null
 
-function initAudioTimestampWatermarkSender(interval = 5000) {
-  if (audioContext || audioDestination || !ggwave) return
+function initGgwave() {
+  if (ggwavePromise) return ggwavePromise
+  ggwavePromise = ggwave_factory()
+  ggwavePromise.then((ggwave) => {
+    ggwave.disableLog()
+  })
+  return ggwavePromise
+}
+
+async function initAudioTimestampWatermarkSender(interval = 5000) {
+  if (audioContext || audioDestination) return
   log(`[e2e-audio-stats] initAudioTimestampWatermarkSender with interval ${interval}ms`)
 
   audioContext = new AudioContext({
@@ -84,6 +81,8 @@ function initAudioTimestampWatermarkSender(interval = 5000) {
     sampleRate: 48000,
   })
   audioDestination = audioContext.createMediaStreamDestination()
+
+  const ggwave = await initGgwave()
   const parameters = ggwave.getDefaultParameters()
   parameters.sampleRateInp = audioContext.sampleRate
   parameters.sampleRateOut = audioContext.sampleRate
@@ -104,12 +103,12 @@ function initAudioTimestampWatermarkSender(interval = 5000) {
   }, interval)
 }
 
-export function applyAudioTimestampWatermark(mediaStream: MediaStream) {
+export async function applyAudioTimestampWatermark(mediaStream: MediaStream) {
   if (mediaStream.getAudioTracks().length === 0) {
     return mediaStream
   }
   if (!audioContext || !audioDestination) {
-    initAudioTimestampWatermarkSender()
+    await initAudioTimestampWatermarkSender()
   }
   const track = mediaStream.getAudioTracks()[0]
   log(`[e2e-audio-stats] applyAudioTimestampWatermark`, mediaStream.getAudioTracks()[0].id, '->', track.id)
@@ -140,7 +139,7 @@ export function applyAudioTimestampWatermark(mediaStream: MediaStream) {
 
 const processingAudioTracks = new Set()
 
-export function recognizeAudioTimestampWatermark(track: MediaStreamTrack) {
+export async function recognizeAudioTimestampWatermark(track: MediaStreamTrack) {
   if (processingAudioTracks.has(track) || processingAudioTracks.size > 10 || track.readyState === 'ended') return
   log(`[e2e-audio-stats] recognizeAudioTimestampWatermark ${track.id}`)
   processingAudioTracks.add(track)
@@ -152,6 +151,7 @@ export function recognizeAudioTimestampWatermark(track: MediaStreamTrack) {
   const buf = new Float32Array(samplesPerFrame)
   let bufIndex = 0
   let instance: number | null = null
+  const ggwave = await initGgwave()
 
   const writableStream = new window.WritableStream(
     {

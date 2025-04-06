@@ -147,17 +147,17 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
 
         if (receiver.track.kind === 'video') {
           if (enabledForSession(params.timestampWatermarkVideo)) {
-            recognizeVideoTimestampWatermark(receiver.track)
+            await recognizeVideoTimestampWatermark(receiver.track)
           }
           if (enabledForSession(params.saveRecvVideoTrack)) {
-            saveMediaTrack(receiver.track, 'recv').catch((err) => log(`saveMediaTrack error: ${err.message}`))
+            saveMediaTrack(receiver.track, 'recv')
           }
         } else if (receiver.track.kind === 'audio') {
           if (enabledForSession(params.timestampWatermarkAudio)) {
-            recognizeAudioTimestampWatermark(receiver.track)
+            await recognizeAudioTimestampWatermark(receiver.track)
           }
           if (enabledForSession(params.saveRecvAudioTrack)) {
-            saveMediaTrack(receiver.track, 'recv').catch((err) => log(`saveMediaTrack error: ${err.message}`))
+            saveMediaTrack(receiver.track, 'recv')
           }
         }
       }
@@ -215,19 +215,9 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
   private checkSaveStream(transceiver: RTCRtpTransceiver) {
     if (!transceiver?.sender?.track) return
     if (transceiver.sender.track.kind === 'video' && enabledForSession(params.saveSendVideoTrack)) {
-      saveMediaTrack(
-        transceiver.sender.track,
-        'send',
-        params.saveVideoTrackEnableStart,
-        params.saveVideoTrackEnableEnd,
-      ).catch((err) => log(`saveMediaTrack error: ${err.message}`))
+      saveMediaTrack(transceiver.sender.track, 'send', params.saveVideoTrackEnableStart, params.saveVideoTrackEnableEnd)
     } else if (transceiver.sender.track.kind === 'audio' && enabledForSession(params.saveSendAudioTrack)) {
-      saveMediaTrack(
-        transceiver.sender.track,
-        'send',
-        params.saveAudioTrackEnableStart,
-        params.saveAudioTrackEnableEnd,
-      ).catch((err) => log(`saveMediaTrack error: ${err.message}`))
+      saveMediaTrack(transceiver.sender.track, 'send', params.saveAudioTrackEnableStart, params.saveAudioTrackEnableEnd)
     }
   }
 

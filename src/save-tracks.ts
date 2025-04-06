@@ -279,7 +279,7 @@ function getSaveFileWorker() {
  * ```
  * The file will sent to the server as `Participant-000000_send_<track.id>.ivf.raw`.
  */
-export async function saveMediaTrack(
+export function saveMediaTrack(
   track: MediaStreamTrack,
   sendrecv: 'send' | 'recv',
   enableStart = 0,
@@ -333,7 +333,7 @@ export async function saveMediaTrack(
   )
 }
 
-export async function stopSaveMediaTrack(track: MediaStreamTrack) {
+export function stopSaveMediaTrack(track: MediaStreamTrack) {
   const { id, kind } = track
   if (!savingTracks[kind as keyof typeof savingTracks].has(id)) {
     return

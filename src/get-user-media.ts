@@ -297,7 +297,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     }
 
     if (enabledForSession(params.timestampWatermarkAudio)) {
-      mediaStream = applyAudioTimestampWatermark(mediaStream)
+      mediaStream = await applyAudioTimestampWatermark(mediaStream)
     }
     if (enabledForSession(params.timestampWatermarkVideo)) {
       mediaStream = applyVideoTimestampWatermark(mediaStream)
@@ -335,7 +335,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
     }
 
     if (enabledForSession(params.timestampWatermarkAudio)) {
-      mediaStream = applyAudioTimestampWatermark(mediaStream)
+      mediaStream = await applyAudioTimestampWatermark(mediaStream)
     }
 
     collectMediaTracks(mediaStream)

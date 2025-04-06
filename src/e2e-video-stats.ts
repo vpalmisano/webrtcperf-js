@@ -133,7 +133,7 @@ function getApplyVideoTimestampWatermarkWorker() {
  */
 export function applyVideoTimestampWatermark(mediaStream: MediaStream) {
   if (!('MediaStreamTrackProcessor' in window) || !('MediaStreamTrackGenerator' in window)) {
-    log(`unsupported MediaStreamTrackProcessor and MediaStreamTrackGenerator`)
+    log(`[e2e-video-stats] unsupported MediaStreamTrackProcessor and MediaStreamTrackGenerator`)
     return mediaStream
   }
   const track = mediaStream.getVideoTracks()[0]
@@ -147,7 +147,7 @@ export function applyVideoTimestampWatermark(mediaStream: MediaStream) {
   const { width, height } = trackSettings
   const participantName = overrides.getParticipantName()
 
-  log(`applyVideoTimestampWatermark ${track.id}`, { track, trackSettings, trackConstraints })
+  log(`[e2e-video-stats] applyVideoTimestampWatermark ${track.id}`, { track, trackSettings, trackConstraints })
 
   const trackProcessor = new window.MediaStreamTrackProcessor({ track })
   const trackGenerator = new window.MediaStreamTrackGenerator({ kind: 'video' })
@@ -218,9 +218,9 @@ async function loadTesseract() {
   }
   const load = async () => {
     await loadScript('tesseract', `https://unpkg.com/tesseract.js@${TESSERACT_VERSION}/dist/tesseract.min.js`)
-    log('Creating Tesseract worker')
+    log('[e2e-video-stats]Creating Tesseract worker')
     try {
-      Tesseract.setLogging(true)
+      Tesseract.setLogging(false)
       const scheduler = Tesseract.createScheduler()
       const worker = await Tesseract.createWorker('eng', Tesseract.OEM.LSTM_ONLY, {
         logger: (m: { status: string }) => {
@@ -235,7 +235,7 @@ async function loadTesseract() {
         tessedit_char_whitelist: '0123456789-',
       })
       scheduler.addWorker(worker)
-      log('Creating Tesseract worker done')
+      log('[e2e-video-stats] Creating Tesseract worker done')
       return { scheduler, worker }
     } catch (err) {
       log(`Creating Tesseract worker error: ${(err as Error).message}`)
@@ -257,7 +257,7 @@ export async function recognizeVideoTimestampWatermark(track: MediaStreamTrack, 
   if (track.readyState === 'ended' || track.kind !== 'video' || processingVideoTracks.has(track)) return
   processingVideoTracks.add(track)
   track.addEventListener('ended', () => processingVideoTracks.delete(track))
-  log(`recognizeVideoTimestampWatermark ${track.id} ${track.label}`, track.getSettings())
+  log(`[e2e-video-stats] recognizeVideoTimestampWatermark ${track.id} ${track.label}`, track.getSettings())
   const { scheduler } = await loadTesseract()
   let lastTimestamp = 0
 
@@ -287,7 +287,7 @@ export async function recognizeVideoTimestampWatermark(track: MediaStreamTrack, 
                 if (isFinite(delay) && delay > 0 && delay < 30000) {
                   const elapsed = Date.now() - now
                   log(
-                    `VideoTimestampWatermark text=${cleanText} delay=${delay}ms confidence=${
+                    `[e2e-video-stats] rx text=${cleanText} delay=${delay}ms confidence=${
                       data.confidence
                     } elapsed=${elapsed}ms`,
                   )
@@ -300,7 +300,7 @@ export async function recognizeVideoTimestampWatermark(track: MediaStreamTrack, 
               }
             })
             .catch((err: unknown) => {
-              log(`recognizeVideoTimestampWatermark error: ${(err as Error).message}`)
+              log(`[e2e-video-stats] recognizeVideoTimestampWatermark error: ${(err as Error).message}`)
             })
         }
         videoFrame.close()
@@ -316,6 +316,6 @@ export async function recognizeVideoTimestampWatermark(track: MediaStreamTrack, 
     new CountQueuingStrategy({ highWaterMark: 30 }),
   )
   trackProcessor.readable.pipeTo(writableStream).catch((err: unknown) => {
-    log(`recognizeVideoTimestampWatermark error: ${(err as Error).message}`)
+    log(`[e2e-video-stats]recognizeVideoTimestampWatermark error: ${(err as Error).message}`)
   })
 }

@@ -13,7 +13,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "version": "1.0.9",
+  "version": "1.0.10",
   "main": "dist/webrtcperf.js",
   "files": [
     "dist"

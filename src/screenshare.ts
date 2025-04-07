@@ -55,7 +55,7 @@ export type FakeScreenshareParams = {
  * Start the fake screenshare.
  * @param opts - The parameters for the fake screenshare.
  */
-export async function startFakeScreenshare(opts = {} as FakeScreenshareParams) {
+export async function startFakeScreenshare(opts = params.fakeScreenshare) {
   const { embed, slides, urls, animationDuration, delay, width, height, pointerAnimation } = Object.assign(
     {
       embed: '',

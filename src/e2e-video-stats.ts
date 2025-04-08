@@ -161,6 +161,8 @@ export function applyVideoTimestampWatermark(mediaStream: MediaStream) {
     trackGeneratorStop()
     track.stop()
   }
+  trackGenerator.getSettings = () => trackSettings
+  trackGenerator.getConstraints = () => trackConstraints
 
   const { readable } = trackProcessor
   const { writable } = trackGenerator

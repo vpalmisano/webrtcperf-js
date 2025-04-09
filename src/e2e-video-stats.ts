@@ -8,10 +8,10 @@ export const videoEndToEndDelayStats = new MeasuredStats({ ttl: 15 })
 export const screenEndToEndDelayStats = new MeasuredStats({ ttl: 15 })
 
 export const videoStartFrameDelayStats = new MeasuredStats({ ttl: 60 })
-export let videoStartFrameTime = 0
+export let videoStartFrameTime = null as number | null
 
 export const screenStartFrameDelayStats = new MeasuredStats({ ttl: 60 })
-export let screenStartFrameTime = 0
+export let screenStartFrameTime = null as number | null
 
 /**
  * It sets the start frame time used for calculating the videoStartFrameDelay metric.
@@ -30,18 +30,20 @@ export function setScreenStartFrameTime(value: number) {
 }
 
 export function collectVideoEndToEndStats() {
-  const videoDelay = videoEndToEndDelayStats.mean()
-  const screenDelay = screenEndToEndDelayStats.mean()
+  const videoStartFrameDelay = videoStartFrameDelayStats.mean()
+  const screenStartFrameDelay = screenStartFrameDelayStats.mean()
   return {
     videoDelay: videoEndToEndDelayStats.mean(),
     videoStartFrameDelay:
-      videoDelay !== undefined && videoStartFrameTime !== undefined && videoDelay > videoStartFrameTime
-        ? videoDelay - videoStartFrameTime
+      videoStartFrameDelay !== undefined && videoStartFrameTime !== null && videoStartFrameDelay > videoStartFrameTime
+        ? videoStartFrameDelay - videoStartFrameTime
         : undefined,
     screenDelay: screenEndToEndDelayStats.mean(),
     screenStartFrameDelay:
-      screenDelay !== undefined && screenStartFrameTime !== undefined && screenDelay > screenStartFrameTime
-        ? screenDelay - screenStartFrameTime
+      screenStartFrameDelay !== undefined &&
+      screenStartFrameTime !== null &&
+      screenStartFrameDelay > screenStartFrameTime
+        ? screenStartFrameDelay - screenStartFrameTime
         : undefined,
   }
 }

@@ -28,7 +28,7 @@ const ggwave_factory = require('@vpalmisano/ggwave') as () => Promise<Ggwave>
 export const audioEndToEndDelayStats = new MeasuredStats({ ttl: 15 })
 
 export const audioStartFrameDelayStats = new MeasuredStats({ ttl: 60 })
-export let audioStartFrameTime: number | undefined
+export let audioStartFrameTime = null as number | null
 
 /**
  * It sets the start frame time used for calculating the startFrameDelay metric.
@@ -39,15 +39,12 @@ export const setAudioStartFrameTime = (value: number) => {
 }
 
 export const collectAudioEndToEndStats = () => {
-  const delay = audioEndToEndDelayStats.mean()
+  const startFrameDelay = audioStartFrameDelayStats.mean()
   return {
     delay: audioEndToEndDelayStats.mean(),
     startFrameDelay:
-      audioStartFrameDelayStats.size &&
-      audioStartFrameTime !== undefined &&
-      delay !== undefined &&
-      delay > audioStartFrameTime
-        ? delay - audioStartFrameTime
+      startFrameDelay !== undefined && audioStartFrameTime !== null && startFrameDelay > audioStartFrameTime
+        ? startFrameDelay - audioStartFrameTime
         : undefined,
   }
 }

@@ -29,14 +29,26 @@ export const PeerConnections = new Map<number, RTCPeerConnection>()
  */
 export const peerConnectionsDelayStats = new MeasuredStats({ ttl: 15 })
 
-export async function waitTrackMedia(track: MediaStreamTrack, startTime = Date.now()) {
+export async function waitTrackMedia(
+  track: MediaStreamTrack,
+  startTime = Date.now(),
+  minWidth = 0,
+  minHeight = 0,
+  minNumberOfFrames = 0,
+) {
   const { id, kind } = track
   const debug = (...args: unknown[]) => {
     if (enabledForSession(params.peerConnectionDebug)) {
       log(`waitTrackMedia ${id} (${kind})`, ...args)
     }
   }
-  return new Promise<{ now: number; fromStart: number }>((resolve, reject) => {
+  return new Promise<{
+    now: number
+    fromStart: number
+    codedWidth?: number
+    codedHeight?: number
+    numberOfFrames?: number
+  }>((resolve, reject) => {
     const { readable } = new window.MediaStreamTrackProcessor({ track })
     const controller = new AbortController()
     const writeable = new WritableStream(
@@ -44,12 +56,15 @@ export async function waitTrackMedia(track: MediaStreamTrack, startTime = Date.n
         async write(frame) {
           const { codedWidth, codedHeight, numberOfFrames } = frame
           frame.close()
-          if ((kind === 'audio' && numberOfFrames) || (kind === 'video' && codedWidth && codedHeight)) {
+          if (
+            (kind === 'audio' && numberOfFrames >= minNumberOfFrames) ||
+            (kind === 'video' && codedWidth >= minWidth && codedHeight >= minHeight)
+          ) {
             const now = Date.now()
             const fromStart = now - startTime
             debug(`done, fromStart: ${fromStart}ms`, { codedWidth, codedHeight, numberOfFrames })
             controller.abort('done')
-            resolve({ now, fromStart })
+            resolve({ now, fromStart, codedWidth, codedHeight, numberOfFrames })
           }
         },
         abort(reason) {
@@ -259,10 +274,10 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
     }
 
     if (transceiver.receiver) {
-      watchObjectProperty(transceiver.receiver, 'playoutDelayHint', (value, oldValue) => {
+      watchObjectProperty(transceiver.receiver, 'playoutDelayHint' as keyof RTCRtpReceiver, (value, oldValue) => {
         this.debug(`receiver ${transceiver.receiver.track.kind} playoutDelayHint ${oldValue} -> ${value}`)
       })
-      watchObjectProperty(transceiver.receiver, 'jitterBufferTarget', (value, oldValue) => {
+      watchObjectProperty(transceiver.receiver, 'jitterBufferTarget' as keyof RTCRtpReceiver, (value, oldValue) => {
         this.debug(`receiver ${transceiver.receiver.track.kind} jitterBufferTarget ${oldValue} -> ${value}`)
       })
     }

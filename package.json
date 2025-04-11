@@ -13,7 +13,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "version": "1.0.12",
+  "version": "1.0.13",
   "main": "dist/webrtcperf.js",
   "files": [
     "dist"
@@ -40,7 +40,7 @@
     "webpack-cli": "^6.0.1"
   },
   "scripts": {
-    "prepare": "webpack",
+    "prepare": "yarn lint && webpack",
     "prepublishOnly": "yarn lint",
     "build": "webpack",
     "lint": "eslint src/**/*.ts",

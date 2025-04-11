@@ -470,8 +470,14 @@ export function injectCss(css: string, id = 'custom') {
   return style
 }
 
+/**
+ * Watches a property of an object.
+ * @param object The object to watch.
+ * @param name The name of the property to watch.
+ * @param cb The callback to call when the property changes. It receives the new value and the old value.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function watchObjectProperty(object: any, name: string, cb: (newValue: unknown, oldValue: unknown) => void) {
+export function watchObjectProperty(object: any, name: string, cb: (newValue: any, oldValue: any) => void) {
   let value = object[name]
   Object.defineProperty(object, name, {
     get: function () {

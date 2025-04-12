@@ -20,5 +20,12 @@
       "excludeNotDocumented": true,
       "hideGenerator": true,
       "cleanOutputDir": true
+    },
+    "navigation": {
+      "includeCategories": true,
+      "includeGroups": true,
+      "includeFolders": true,
+      "compactFolders": false,
+      "excludeReferences": true
     }
-}
+  }

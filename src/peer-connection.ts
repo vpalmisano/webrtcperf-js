@@ -29,6 +29,14 @@ export const PeerConnections = new Map<number, RTCPeerConnection>()
  */
 export const peerConnectionsDelayStats = new MeasuredStats({ ttl: 15 })
 
+/**
+ * Wait for a track to be ready.
+ * @param {MediaStreamTrack} track - The track to wait for.
+ * @param {number} startTime - The start time.
+ * @param {number} minWidth - The minimum width after which the promise is resolved.
+ * @param {number} minHeight - The minimum height after which the promise is resolved.
+ * @param {number} minNumberOfFrames - The minimum number of audio frames after which the promise is resolved.
+ */
 export async function waitTrackMedia(
   track: MediaStreamTrack,
   startTime = Date.now(),
@@ -141,6 +149,15 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
         /* if (encodedInsertableStreams && timestampInsertableStreams) {
           webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)
         } */
+
+        /**
+         * @event {CustomEvent} webrtcperf:peerconnection:track
+         * @property {number} id - The id of the peer connection.
+         * @property {RTCPeerConnection} pc - The peer connection.
+         * @property {RTCRtpReceiver} receiver - The receiver.
+         * @property {RTCRtpTransceiver} transceiver - The transceiver.
+         * @property {MediaStream[]} streams - The streams.
+         */
         window.dispatchEvent(
           new CustomEvent('webrtcperf:peerconnection:track', {
             bubbles: true,

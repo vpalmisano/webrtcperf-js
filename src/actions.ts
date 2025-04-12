@@ -1,6 +1,6 @@
 import { saveMediaTrack, stopSaveMediaTrack } from './save-tracks'
 import { setAudioStartFrameTime } from './e2e-audio-stats'
-import { setVideoStartFrameTime } from './e2e-video-stats'
+import { setScreenStartFrameTime, setVideoStartFrameTime } from './e2e-video-stats'
 import { getIndex, params } from './common'
 import { elapsedTime } from './common'
 import { enabledForSession, log } from './common'
@@ -24,6 +24,7 @@ const ACTIONS = {
   stopSaveMediaTrack,
   setAudioStartFrameTime,
   setVideoStartFrameTime,
+  setScreenStartFrameTime,
   saveTransceiversTracks,
   stopSaveTransceiversTracks,
   syncFakeTracks,

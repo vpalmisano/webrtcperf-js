@@ -141,6 +141,12 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
         /* if (encodedInsertableStreams && timestampInsertableStreams) {
           webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)
         } */
+        window.dispatchEvent(
+          new CustomEvent('webrtcperf:peerconnection:track', {
+            bubbles: true,
+            detail: { id, pc: this, receiver, transceiver, streams },
+          }),
+        )
 
         waitTrackMedia(receiver.track)
           .then(async ({ now }) => {

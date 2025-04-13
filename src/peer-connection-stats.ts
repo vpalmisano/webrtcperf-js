@@ -12,9 +12,8 @@ import {
 
 export const signalingHost = ''
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const TrackStats = new Map<string, { t: number; values: any }>()
-const TrackStatsKeys: string[] = []
+const trackStats = new Map<string, { t: number; values: OutboundTrackStats | InboundTrackStats }>()
+const trackStatsKeys: string[] = []
 
 function isRecvTrackEnabled(track: MediaStreamTrack) {
   return track.enabled
@@ -36,23 +35,22 @@ function sumOptional(a: Record<string, number>, b: Record<string, number>, prop:
 }
 
 function maxOptional(a: Record<string, number>, b: Record<string, number>, prop: string) {
-  if (a[prop] === undefined) {
+  if (a[prop] === undefined || a[prop] === null) {
     a[prop] = b[prop]
-  } else if (b[prop] !== undefined) {
+  } else if (b[prop] !== undefined && b[prop] !== null) {
     a[prop] = Math.max(a[prop], b[prop])
   }
 }
 
-function calculateBitrate(cur: number, old: number, timeDiff: number, fallback = 0) {
-  return cur > 0 && old > 0 && cur >= old ? Math.round((8000 * (cur - old)) / timeDiff) : fallback
+function positiveDiff(cur?: number, old?: number) {
+  return Math.max(0, (cur ?? 0) - (old ?? 0))
 }
 
-function calculateRate(diff: number, timeDiff: number, fallback = 0) {
-  return diff > 0 ? (1000 * diff) / timeDiff : fallback
-}
-
-function positiveDiff(cur: number, old: number) {
-  return Math.max(0, (cur || 0) - (old || 0))
+function averageFromTotal(value?: number, prevValue?: number, total?: number, prevTotal?: number) {
+  const diff = positiveDiff(total, prevTotal)
+  if (diff) {
+    return positiveDiff(value, prevValue) / diff
+  }
 }
 
 function calculateLossRate(lost: number, total: number) {
@@ -63,23 +61,128 @@ function calculateJitterBuffer(jitterBufferDelay: number, count: number) {
   return count > 0 ? jitterBufferDelay / count : undefined
 }
 
-function updateTrackStats(trackId: string, track: MediaStreamTrack, t: number, values: Record<string, unknown>) {
-  const isNew = !TrackStats.has(trackId)
-  TrackStats.set(trackId, { t, values })
+export type OutboundRtpStats = {
+  kind: 'audio' | 'video'
+  bytesSent: number
+  headerBytesSent: number
+  packetsSent: number
+  retransmittedPacketsSent: number
+  packetsLost: number
+  nackCount: number
+  framesSent: number
+  frameWidth: number
+  frameHeight: number
+  framesPerSecond: number
+  firCountReceived: number
+  pliCountReceived: number
+  totalRoundTripTime: number
+  roundTripTimeMeasurements: number
+  jitter: number
+  totalEncodeTime: number
+  totalPacketSendDelay: number
+  qualityLimitationResolutionChanges: number
+  qualityLimitationDurationsCpu?: number
+  qualityLimitationDurationsBandwidth?: number
+  qualityLimitationDurationsTotal?: number
+  bitrate?: number
+  packetsLossRate?: number
+  qualityLimitationCpu?: number
+  qualityLimitationBandwidth?: number
+  roundTripTime?: number
+  encodeLatency?: number
+  sentLatency?: number
+  transportRoundTripTime?: number
+}
+
+export type InboundRtpStats = {
+  kind: 'audio' | 'video'
+  packetsLost: number
+  packetsReceived: number
+  retransmittedPacketsReceived: number
+  jitter: number
+  bytesReceived: number
+  headerBytesReceived: number
+  decoderImplementation: string
+  framesDecoded: number
+  totalDecodeTime: number
+  framesReceived: number
+  frameWidth: number
+  frameHeight: number
+  frameRate: number
+  firCount: number
+  pliCount: number
+  nackCount: number
+  freezeCount: number
+  totalFreezesDuration: number
+  jitterBufferEmittedCount: number
+  jitterBufferDelay: number
+  totalRoundTripTime: number
+  roundTripTimeMeasurements: number
+  totalAudioEnergy: number
+  totalSamplesDuration: number
+  totalSamplesReceived: number
+  concealedSamples: number
+  concealmentEvents: number
+  insertedSamplesForDeceleration: number
+  removedSamplesForAcceleration: number
+  keyFramesDecoded: number
+  bitrate?: number
+  framesPerSecond?: number
+  packetsLossRate?: number
+  jitterBuffer?: number
+  transportTotalRoundTripTime?: number
+  transportResponsesReceived?: number
+  transportRoundTripTime?: number
+  decodeLatency?: number
+  availableIncomingBitrate?: number
+  audioLevel?: number
+}
+
+export type TrackStats = {
+  enabled: boolean
+  isDisplay: boolean
+  remoteAddress: string
+  codec: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  raw?: any
+}
+
+export type OutboundTrackStats = TrackStats & {
+  outboundRtp: OutboundRtpStats
+  videoSentActiveEncodings: number
+  sentMaxBitrate?: number
+  availableOutgoingBitrate: number
+}
+
+export type InboundTrackStats = TrackStats & {
+  inboundRtp: InboundRtpStats
+  videoReceivedActiveEncodings?: number
+  receivedMaxBitrate?: number
+  availableIncomingBitrate?: number
+}
+
+function updateTrackStats(
+  trackId: string,
+  track: MediaStreamTrack,
+  t: number,
+  values: OutboundTrackStats | InboundTrackStats,
+) {
+  const isNew = !trackStats.has(trackId)
+  trackStats.set(trackId, { t, values })
   // Update ordered array.
-  const index = TrackStatsKeys.indexOf(trackId)
+  const index = trackStatsKeys.indexOf(trackId)
   if (index !== -1) {
-    TrackStatsKeys.splice(index, 1)
+    trackStatsKeys.splice(index, 1)
   }
-  TrackStatsKeys.push(trackId)
+  trackStatsKeys.push(trackId)
   if (isNew) {
     track.addEventListener(
       'ended',
       () => {
-        TrackStats.delete(trackId)
-        const index = TrackStatsKeys.indexOf(trackId)
+        trackStats.delete(trackId)
+        const index = trackStatsKeys.indexOf(trackId)
         if (index !== -1) {
-          TrackStatsKeys.splice(index, 1)
+          trackStatsKeys.splice(index, 1)
         }
       },
       { once: true },
@@ -95,16 +198,12 @@ async function getSenderStats(sender: RTCRtpSender, pc: RTCPeerConnection, now: 
   }
   const trackId = 's-' + track.id + '-' + track.kind[0]
   const stats = await pc.getStats(track)
-  const values = {
+  const values: OutboundTrackStats = {
     enabled: track.enabled && (track.kind === 'audio' || encodings.length > 0),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    outboundRtp: {} as any,
+    outboundRtp: {} as OutboundRtpStats,
     isDisplay: false,
-    videoSentActiveEncodings: 0,
-    sentMaxBitrate: undefined as number | undefined,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    raw: undefined as any,
     codec: '',
+    videoSentActiveEncodings: 0,
     availableOutgoingBitrate: 0,
     remoteAddress: '',
   }
@@ -112,12 +211,15 @@ async function getSenderStats(sender: RTCRtpSender, pc: RTCPeerConnection, now: 
     values.isDisplay = overrides.isSenderDisplayTrack(track)
     values.videoSentActiveEncodings = encodings.length
   }
-  values.sentMaxBitrate = encodings.length
+  const sentMaxBitrate = encodings.length
     ? encodings.reduce((prev, encoding) => {
         prev += encoding.maxBitrate || 0
         return prev
       }, 0)
     : undefined
+  if (sentMaxBitrate) {
+    values.sentMaxBitrate = sentMaxBitrate
+  }
   for (const s of stats.values()) {
     if (raw) {
       if (!values.raw) {
@@ -141,7 +243,7 @@ async function getSenderStats(sender: RTCRtpSender, pc: RTCPeerConnection, now: 
         s.roundTripTimeMeasurements = remoteInboundRtpStreamStats.roundTripTimeMeasurements
         s.jitter = remoteInboundRtpStreamStats.jitter
       }
-      const outboundRtp = {
+      const outboundRtp: OutboundRtpStats = {
         kind: s.kind,
         bytesSent: s.bytesSent,
         headerBytesSent: s.headerBytesSent,
@@ -186,7 +288,13 @@ async function getSenderStats(sender: RTCRtpSender, pc: RTCPeerConnection, now: 
         'qualityLimitationDurationsTotal',
         'totalRoundTripTime',
         'roundTripTimeMeasurements',
-      ].forEach((prop) => sumOptional(values.outboundRtp, outboundRtp, prop))
+      ].forEach((prop) =>
+        sumOptional(
+          values.outboundRtp as unknown as Record<string, number>,
+          outboundRtp as unknown as Record<string, number>,
+          prop,
+        ),
+      )
       ;[
         'framesSent',
         'frameWidth',
@@ -197,21 +305,28 @@ async function getSenderStats(sender: RTCRtpSender, pc: RTCPeerConnection, now: 
         'jitter',
         'totalEncodeTime',
         'totalPacketSendDelay',
-      ].forEach((prop) => maxOptional(values.outboundRtp, outboundRtp, prop))
+      ].forEach((prop) =>
+        maxOptional(
+          values.outboundRtp as unknown as Record<string, number>,
+          outboundRtp as unknown as Record<string, number>,
+          prop,
+        ),
+      )
     } else if (s.type === 'remote-candidate') {
       values.remoteAddress = s.address
     }
   }
   if (values.outboundRtp.kind && values.outboundRtp.bytesSent + values.outboundRtp.headerBytesSent > 0) {
-    const prevStats = TrackStats.get(trackId)
-    if (prevStats) {
+    if (trackStats.has(trackId)) {
+      const prevStats = trackStats.get(trackId) as { t: number; values: OutboundTrackStats }
       // bitrate
-      values.outboundRtp.bitrate = calculateBitrate(
-        values.outboundRtp.bytesSent + values.outboundRtp.headerBytesSent,
-        prevStats.values.outboundRtp.bytesSent + prevStats.values.outboundRtp.headerBytesSent,
-        now - prevStats.t,
-        prevStats.values.outboundRtp.bitrate,
-      )
+      values.outboundRtp.bitrate =
+        averageFromTotal(
+          8 * (values.outboundRtp.bytesSent + values.outboundRtp.headerBytesSent),
+          8 * (prevStats.values.outboundRtp.bytesSent + prevStats.values.outboundRtp.headerBytesSent),
+          now / 1000,
+          prevStats.t / 1000,
+        ) ?? 0
       // loss rate
       const lost = positiveDiff(values.outboundRtp.packetsLost, prevStats.values.outboundRtp.packetsLost)
       const sent = positiveDiff(values.outboundRtp.packetsSent, prevStats.values.outboundRtp.packetsSent)
@@ -236,20 +351,29 @@ async function getSenderStats(sender: RTCRtpSender, pc: RTCPeerConnection, now: 
           (100 * qualityLimitationDurationsBandwidthDiff) / totalQualityLimitationDurationsDiff
       }
       // round trip time
-      values.outboundRtp.roundTripTime =
-        (values.outboundRtp.totalRoundTripTime - prevStats.values.outboundRtp.totalRoundTripTime) /
-        (values.outboundRtp.roundTripTimeMeasurements - prevStats.values.outboundRtp.roundTripTimeMeasurements)
+      values.outboundRtp.roundTripTime = averageFromTotal(
+        values.outboundRtp.totalRoundTripTime,
+        prevStats.values.outboundRtp.totalRoundTripTime,
+        values.outboundRtp.roundTripTimeMeasurements,
+        prevStats.values.outboundRtp.roundTripTimeMeasurements,
+      )
       // encode and sent latency
       if (values.outboundRtp.kind === 'video') {
-        const packetsSentDiff = values.outboundRtp.packetsSent - prevStats.values.outboundRtp.packetsSent
-        values.outboundRtp.encodeLatency =
-          (values.outboundRtp.totalEncodeTime - prevStats.values.outboundRtp.totalEncodeTime) / packetsSentDiff
-        values.outboundRtp.sentLatency =
-          (values.outboundRtp.totalPacketSendDelay - prevStats.values.outboundRtp.totalPacketSendDelay) /
-          packetsSentDiff
+        values.outboundRtp.encodeLatency = averageFromTotal(
+          values.outboundRtp.totalEncodeTime,
+          prevStats.values.outboundRtp.totalEncodeTime,
+          values.outboundRtp.packetsSent,
+          prevStats.values.outboundRtp.packetsSent,
+        )
+        values.outboundRtp.sentLatency = averageFromTotal(
+          values.outboundRtp.totalPacketSendDelay,
+          prevStats.values.outboundRtp.totalPacketSendDelay,
+          values.outboundRtp.packetsSent,
+          prevStats.values.outboundRtp.packetsSent,
+        )
       }
     }
-    values.outboundRtp = filterUndefined(values.outboundRtp)
+    values.outboundRtp = filterUndefined(values.outboundRtp) as OutboundRtpStats
     return { trackId, values }
   }
 }
@@ -261,15 +385,11 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
   }
   const trackId = overrides.getReceiverParticipantName(track) + '-' + track.kind[0]
   const stats = await pc.getStats(track)
-  const values = {
+  const values: InboundTrackStats = {
     enabled: isRecvTrackEnabled(track),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inboundRtp: {} as any,
+    inboundRtp: {} as InboundRtpStats,
     isDisplay: track.kind === 'video' && overrides.isReceiverDisplayTrack(track),
     videoReceivedActiveEncodings: 0,
-    receivedMaxBitrate: undefined as number | undefined,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    raw: undefined as any,
     codec: '',
     availableIncomingBitrate: 0,
     remoteAddress: '',
@@ -327,18 +447,25 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
     }
   }
   if (values.inboundRtp.kind && values.inboundRtp.bytesReceived + values.inboundRtp.headerBytesReceived > 0) {
-    const prevStats = TrackStats.get(trackId)
-    if (prevStats) {
+    if (trackStats.has(trackId)) {
+      const prevStats = trackStats.get(trackId) as { t: number; values: InboundTrackStats }
       // Update bitrate.
-      values.inboundRtp.bitrate = calculateBitrate(
-        values.inboundRtp.bytesReceived + values.inboundRtp.headerBytesReceived,
-        prevStats.values.inboundRtp.bytesReceived + prevStats.values.inboundRtp.headerBytesReceived,
-        now - prevStats.t,
-      )
+      values.inboundRtp.bitrate =
+        averageFromTotal(
+          8 * (values.inboundRtp.bytesReceived + values.inboundRtp.headerBytesReceived),
+          8 * (prevStats.values.inboundRtp.bytesReceived + prevStats.values.inboundRtp.headerBytesReceived),
+          now / 1000,
+          prevStats.t / 1000,
+        ) ?? 0
       // Update video framesPerSecond.
       if (values.inboundRtp.kind === 'video' && values.inboundRtp.keyFramesDecoded > 0) {
-        const frames = positiveDiff(values.inboundRtp.framesReceived, prevStats.values.inboundRtp.framesReceived)
-        values.inboundRtp.framesPerSecond = calculateRate(frames, now - prevStats.t)
+        values.inboundRtp.framesPerSecond =
+          averageFromTotal(
+            values.inboundRtp.framesReceived,
+            prevStats.values.inboundRtp.framesReceived,
+            now / 1000,
+            prevStats.t / 1000,
+          ) ?? 0
       }
       // Update packet loss rate.
       const lost = positiveDiff(values.inboundRtp.packetsLost, prevStats.values.inboundRtp.packetsLost)
@@ -350,18 +477,23 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
         values.inboundRtp.jitterBufferEmittedCount - prevStats.values.inboundRtp.jitterBufferEmittedCount,
       )
       // Update round trip time.
-      values.inboundRtp.transportRoundTripTime =
-        (values.inboundRtp.transportTotalRoundTripTime - prevStats.values.inboundRtp.transportTotalRoundTripTime) /
-        (values.inboundRtp.transportResponsesReceived - prevStats.values.inboundRtp.transportResponsesReceived)
-      // Update latency.
+      values.inboundRtp.transportRoundTripTime = averageFromTotal(
+        values.inboundRtp.transportTotalRoundTripTime,
+        prevStats.values.inboundRtp.transportTotalRoundTripTime,
+        values.inboundRtp.transportResponsesReceived,
+        prevStats.values.inboundRtp.transportResponsesReceived,
+      )
+      // Update decode latency.
       if (values.inboundRtp.kind === 'video') {
-        values.inboundRtp.decodeLatency =
-          (values.inboundRtp.totalDecodeTime - prevStats.values.inboundRtp.totalDecodeTime) /
-          (values.inboundRtp.framesDecoded - prevStats.values.inboundRtp.framesDecoded)
+        values.inboundRtp.decodeLatency = averageFromTotal(
+          values.inboundRtp.totalDecodeTime,
+          prevStats.values.inboundRtp.totalDecodeTime,
+          values.inboundRtp.framesDecoded,
+          prevStats.values.inboundRtp.framesDecoded,
+        )
       }
-      // Update audio metrics.
+      // Update audio level.
       if (values.inboundRtp.kind === 'audio') {
-        // Audio level.
         const energy = positiveDiff(values.inboundRtp.totalAudioEnergy, prevStats.values.inboundRtp.totalAudioEnergy)
         const samples = positiveDiff(
           values.inboundRtp.totalSamplesDuration,
@@ -370,7 +502,7 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
         values.inboundRtp.audioLevel = samples > 0 ? Math.sqrt(energy / samples) : undefined
       }
     }
-    values.inboundRtp = filterUndefined(values.inboundRtp)
+    values.inboundRtp = filterUndefined(values.inboundRtp) as InboundRtpStats
     return { trackId, values }
   }
 }
@@ -384,37 +516,39 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
  * @param {boolean} verbose
  */
 async function getPeerConnectionStats(id: number, pc: RTCPeerConnection, now: number, raw = false, verbose = false) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const ret: Record<string, any> = {}
+  const ret: Record<string, OutboundTrackStats | InboundTrackStats> = {}
   const transceivers = pc.getTransceivers().filter((t) => t && t.mid !== 'probator')
   if (verbose) {
     log('getPeerConnectionStats', { id, pc, transceivers })
   }
-  for (const t of transceivers) {
-    if (t.sender && t.sender.track) {
-      const stats = await getSenderStats(t.sender, pc, now, raw)
-      if (stats) {
-        const { trackId, values } = stats
-        const track = t.sender.track
-        if (verbose) {
-          log(`send track ${trackId} (${track.kind}): ${JSON.stringify(values.outboundRtp, null, 2)}`)
+  await Promise.all(
+    transceivers.map(async (t) => {
+      if (t.sender && t.sender.track) {
+        const stats = await getSenderStats(t.sender, pc, now, raw)
+        if (stats) {
+          const { trackId, values } = stats
+          const track = t.sender.track
+          if (verbose) {
+            log(`send track ${trackId} (${track.kind}): ${JSON.stringify(values.outboundRtp, null, 2)}`)
+          }
+          ret[trackId] = values
+          updateTrackStats(trackId, track, now, values)
         }
-        ret[trackId] = values
-        updateTrackStats(trackId, track, now, values)
       }
-    }
-    if (t.receiver && t.receiver.track) {
-      const stats = await getReceiverStats(t.receiver, pc, now, raw)
-      if (stats) {
-        const track = t.receiver.track
-        if (verbose) {
-          log(`recv track ${stats.trackId} (${track.kind}): ${JSON.stringify(stats.values.inboundRtp, null, 2)}`)
+      if (t.receiver && t.receiver.track) {
+        const stats = await getReceiverStats(t.receiver, pc, now, raw)
+        if (stats) {
+          const { trackId, values } = stats
+          const track = t.receiver.track
+          if (verbose) {
+            log(`recv track ${trackId} (${track.kind}): ${JSON.stringify(values.inboundRtp, null, 2)}`)
+          }
+          ret[trackId] = values
+          updateTrackStats(trackId, track, now, values)
         }
-        ret[stats.trackId] = stats.values
-        updateTrackStats(stats.trackId, track, now, stats.values)
       }
-    }
-  }
+    }),
+  )
   return ret
 }
 
@@ -422,17 +556,16 @@ const TRACK_STATS_TIMEOUT = 60 * 1000
 
 setInterval(() => {
   const now = Date.now()
-  for (const [index, trackId] of TrackStatsKeys.entries()) {
-    const item = TrackStats.get(trackId)
+  for (const [index, trackId] of trackStatsKeys.entries()) {
+    const item = trackStats.get(trackId)
     if (!item) {
-      TrackStatsKeys.splice(index, 1)
+      trackStatsKeys.splice(index, 1)
       continue
     }
     const timeDiff = now - item.t
     if (timeDiff > TRACK_STATS_TIMEOUT) {
-      // log(`remove ${trackId} (updated ${timeDiff / 1000}s ago)`)
-      TrackStats.delete(trackId)
-      TrackStatsKeys.splice(index, 1)
+      trackStats.delete(trackId)
+      trackStatsKeys.splice(index, 1)
     } else {
       break
     }
@@ -445,23 +578,25 @@ setInterval(() => {
  * @return {Object}
  */
 export async function collectPeerConnectionStats(raw = false, verbose = false) {
-  const stats = []
+  const stats: Record<string, OutboundTrackStats | InboundTrackStats>[] = []
   const now = Date.now()
   let activePeerConnections = 0
-  for (const [id, pc] of PeerConnections.entries()) {
-    if (pc.connectionState !== 'connected') {
-      continue
-    }
-    activePeerConnections += 1
-    try {
-      const ret = await getPeerConnectionStats(id, pc, now, raw, verbose)
-      if (Object.keys(ret).length) {
-        stats.push(ret)
+  await Promise.all(
+    Array.from(PeerConnections.entries()).map(async ([id, pc]) => {
+      if (pc.connectionState !== 'connected') {
+        return
       }
-    } catch (err) {
-      log(`getPeerConnectionStats error: ${err instanceof Error ? err.message : String(err)}`, err)
-    }
-  }
+      activePeerConnections += 1
+      try {
+        const ret = await getPeerConnectionStats(id, pc, now, raw, verbose)
+        if (Object.keys(ret).length) {
+          stats.push(ret)
+        }
+      } catch (err) {
+        log(`getPeerConnectionStats error: ${err instanceof Error ? err.message : String(err)}`, err)
+      }
+    }),
+  )
 
   return {
     stats,

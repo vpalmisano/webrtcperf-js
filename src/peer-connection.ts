@@ -1,4 +1,4 @@
-import { config, elapsedTime, enabledForSession, log, overrides, params, watchObjectProperty } from './common'
+import { config, elapsedTime, enabledForSession, log, overrides, params } from './common'
 import { OnOffTimer } from './timers'
 import { MeasuredStats } from './stats'
 import { audioStartFrameDelayStats, recognizeAudioTimestampWatermark } from './e2e-audio-stats'
@@ -296,14 +296,14 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
       }
     }
 
-    if (transceiver.receiver) {
+    /* if (transceiver.receiver) {
       watchObjectProperty(transceiver.receiver, 'playoutDelayHint' as keyof RTCRtpReceiver, (value, oldValue) => {
         this.debug(`receiver ${transceiver.receiver.track.kind} playoutDelayHint ${oldValue} -> ${value}`)
       })
       watchObjectProperty(transceiver.receiver, 'jitterBufferTarget' as keyof RTCRtpReceiver, (value, oldValue) => {
         this.debug(`receiver ${transceiver.receiver.track.kind} jitterBufferTarget ${oldValue} -> ${value}`)
       })
-    }
+    } */
 
     /* if (encodedInsertableStreams && timestampInsertableStreams) {
       webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)

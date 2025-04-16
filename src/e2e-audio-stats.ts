@@ -195,7 +195,7 @@ export async function recognizeAudioTimestampWatermark(track: MediaStreamTrack) 
               const rxFramesDuration = (rxFrames * 1000 * samplesPerFrame) / sampleRate
               const delay = now - ts - rxFramesDuration
               log(
-                `[e2e-audio-stats] rx delay: ${delay}ms rxFrames: ${rxFrames} rxFramesDuration: ${rxFramesDuration}ms`,
+                `[e2e-audio-stats] rx delay: ${delay.toFixed(2)}ms rxFrames: ${rxFrames} rxFramesDuration: ${rxFramesDuration.toFixed(2)}ms`,
               )
               if (isFinite(delay) && delay > 0 && delay < 30000) {
                 audioEndToEndDelayStats.push(now, delay / 1000)

@@ -291,9 +291,7 @@ export async function recognizeVideoTimestampWatermark(track: MediaStreamTrack, 
                 if (isFinite(delay) && delay > 0 && delay < 30000) {
                   const elapsed = Date.now() - now
                   log(
-                    `[e2e-video-stats] rx text=${cleanText} delay=${delay}ms confidence=${
-                      data.confidence
-                    } elapsed=${elapsed}ms`,
+                    `[e2e-video-stats] rx delay: ${delay.toFixed(2)}ms confidence: ${data.confidence} elapsed: ${elapsed.toFixed(2)}ms`,
                   )
                   if (await overrides.isReceiverDisplayTrack(track)) {
                     screenEndToEndDelayStats.push(now, delay / 1000)

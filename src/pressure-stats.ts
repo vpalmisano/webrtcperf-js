@@ -1,9 +1,6 @@
 import { log } from './common'
 import { MeasuredStats } from './stats'
 
-/**
- * CPU pressure stats.
- */
 const cpuPressure = new MeasuredStats({ ttl: 15 })
 
 export function collectCpuPressure() {
@@ -20,7 +17,7 @@ declare global {
 if ('PressureObserver' in window) {
   document.addEventListener(
     'DOMContentLoaded',
-    async () => {
+    () => {
       const STATES = {
         nominal: 0,
         fair: 1,

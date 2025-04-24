@@ -164,6 +164,10 @@ export const params = {
    * It can be configured for each track kind or bo
    */
   jitterBufferTarget: null as number | { audio: number | null; video: number | null } | null,
+  /**
+   * If set, the RTCPeerConnection offer will be modified to include the abs-capture-time extension.
+   */
+  absCaptureTime: false as EnableValue,
 }
 
 if ('webrtcperf' in window && window.webrtcperf) {

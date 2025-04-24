@@ -25,6 +25,14 @@ export const connectionTimer = new OnOffTimer()
 export const PeerConnections = new Map<number, RTCPeerConnection>()
 
 /**
+ * Get the connected peer connections.
+ * @return {RTCPeerConnection[]}
+ */
+export function getPeerConnections() {
+  return Array.from(PeerConnections.values()).filter((pc) => pc.connectionState === 'connected')
+}
+
+/**
  * Measured stats for peer connections delay.
  */
 export const peerConnectionsDelayStats = new MeasuredStats({ ttl: 15 })
@@ -85,6 +93,19 @@ export async function waitTrackMedia(
     )
     readable.pipeTo(writeable, { signal: controller.signal }).catch(reject)
   })
+}
+
+function addAbsCaptureTime(offer: RTCSessionDescriptionInit) {
+  if (!enabledForSession(params.absCaptureTime)) return
+  if (offer.sdp) {
+    offer.sdp.match(/a=mid:\d/g)?.forEach((s) => {
+      offer.sdp = offer.sdp!.replace(
+        s,
+        s + '\r\na=extmap:99 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time',
+      )
+    })
+    log('addAbsCaptureTime', offer.sdp)
+  }
 }
 
 window.RTCPeerConnection = class extends RTCPeerConnection {
@@ -229,6 +250,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
     } else {
       this.debug(`createOffer`, { options, offer })
     }
+    addAbsCaptureTime(offer)
     return offer
   }) as typeof RTCPeerConnection.prototype.createOffer
 

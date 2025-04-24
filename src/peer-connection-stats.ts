@@ -136,6 +136,9 @@ export type InboundRtpStats = {
   decodeLatency?: number
   availableIncomingBitrate?: number
   audioLevel?: number
+  captureTimestamp?: number
+  estimatedPlayoutTimestamp?: number
+  endToEndDelay?: number
 }
 
 export type TrackStats = {
@@ -395,9 +398,18 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
     remoteAddress: '',
   }
   for (const s of stats.values()) {
+    const contributingSources = receiver.getSynchronizationSources()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const captureTimestamp: number | undefined = (contributingSources[0] as any)?.captureTimestamp
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const senderCaptureTimeOffset: number | undefined = (contributingSources[0] as any)?.senderCaptureTimeOffset
+    let endToEndDelay: number | undefined
+    if (contributingSources.length && captureTimestamp && senderCaptureTimeOffset !== undefined) {
+      endToEndDelay = contributingSources[0].timestamp - (captureTimestamp + senderCaptureTimeOffset - 2208988800000)
+    }
     if (raw) {
       if (!values.raw) {
-        values.raw = { contributingSources: receiver.getContributingSources(), stats: {} }
+        values.raw = { contributingSources, stats: {} }
       }
       values.raw.stats[s.type] = s
     }
@@ -436,6 +448,10 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
         insertedSamplesForDeceleration: s.insertedSamplesForDeceleration,
         removedSamplesForAcceleration: s.removedSamplesForAcceleration,
         keyFramesDecoded: s.keyFramesDecoded,
+        captureTimestamp,
+        senderCaptureTimeOffset,
+        estimatedPlayoutTimestamp: s.estimatedPlayoutTimestamp,
+        endToEndDelay,
       })
     } else if (s.type === 'remote-candidate') {
       values.remoteAddress = s.address

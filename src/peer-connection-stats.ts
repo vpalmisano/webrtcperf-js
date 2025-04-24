@@ -405,7 +405,8 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
     const senderCaptureTimeOffset: number | undefined = (contributingSources[0] as any)?.senderCaptureTimeOffset
     let endToEndDelay: number | undefined
     if (contributingSources.length && captureTimestamp && senderCaptureTimeOffset !== undefined) {
-      endToEndDelay = contributingSources[0].timestamp - (captureTimestamp + senderCaptureTimeOffset - 2208988800000)
+      endToEndDelay =
+        (contributingSources[0].timestamp - (captureTimestamp + senderCaptureTimeOffset - 2208988800000)) / 1000
     }
     if (raw) {
       if (!values.raw) {

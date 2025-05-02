@@ -1,3 +1,5 @@
+import * as sdpTransform from 'sdp-transform'
+
 import { config, elapsedTime, enabledForSession, log, overrides, params } from './common'
 import { OnOffTimer } from './timers'
 import { MeasuredStats } from './stats'
@@ -98,13 +100,15 @@ export async function waitTrackMedia(
 function addAbsCaptureTime(offer: RTCSessionDescriptionInit) {
   if (!enabledForSession(params.absCaptureTime)) return
   if (offer.sdp) {
-    offer.sdp.match(/a=mid:\d/g)?.forEach((s) => {
-      offer.sdp = offer.sdp!.replace(
-        s,
-        s + '\r\na=extmap:99 http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time',
-      )
+    const sdp = sdpTransform.parse(offer.sdp)
+    sdp.media.forEach((media) => {
+      if (!media.ext) return
+      if (!media.ext.find((ext) => ext.uri === 'http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time')) {
+        media.ext.push({ uri: 'http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time', value: 99 })
+      }
     })
-    log('addAbsCaptureTime', offer.sdp)
+    offer.sdp = sdpTransform.write(sdp)
+    log('addAbsCaptureTime', offer)
   }
 }
 

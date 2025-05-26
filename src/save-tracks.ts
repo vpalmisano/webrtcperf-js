@@ -49,9 +49,9 @@ const saveFileWorkerFn = () => {
   const websocketControllers = new Map()
 
   onmessage = async ({ data }) => {
-    const { action, id, url, readable, kind, x, y, width, height, frameRate } = data
+    const { action, id, url, readable, kind, x, y, width, height, frameRate, bitrate } = data
     const controller = new AbortController()
-    debug(`action=${action} id=${id} kind=${kind} url=${url}`)
+    debug(`action=${action} id=${id} kind=${kind} url=${url} bitrate=${bitrate}`)
     if (action === 'stop') {
       const controller = websocketControllers.get(id)
       controller?.abort('done')
@@ -115,7 +115,7 @@ const saveFileWorkerFn = () => {
           width,
           height,
           framerate: frameRate,
-          bitrate: 20_000_000,
+          bitrate,
           bitrateMode: 'variable',
           latencyMode: 'quality',
         })
@@ -225,7 +225,7 @@ const savingTracks = {
   video: new Set(),
 }
 
-function getSaveFileWorker() {
+export function getSaveFileWorker() {
   if (!saveFileWorker) {
     saveFileWorker = createWorker(saveFileWorkerFn)
     saveFileWorker.onmessage = (event) => {
@@ -250,7 +250,7 @@ function getSaveFileWorker() {
  * @param {Number} width If greater than 0, the video is cropped to this width.
  * @param {Number} height If greater than 0, the video is cropped to this height.
  * @param {Number} frameRate The video frame rate.
- *
+ * @param {Number} bitrate The video bitrate.
  * Examples
  * --------
  *
@@ -289,6 +289,7 @@ export function saveMediaTrack(
   width = 0,
   height = 0,
   frameRate = config.VIDEO_FRAMERATE,
+  bitrate = 20_000_000,
 ) {
   if (!config.SAVE_MEDIA_URL) {
     throw new Error('config.SAVE_MEDIA_URL is not set')
@@ -328,6 +329,7 @@ export function saveMediaTrack(
       width,
       height,
       frameRate,
+      bitrate,
     },
     [readable],
   )

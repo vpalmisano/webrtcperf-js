@@ -213,14 +213,14 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
             await recognizeVideoTimestampWatermark(receiver.track)
           }
           if (enabledForSession(params.saveRecvVideoTrack)) {
-            saveMediaTrack(receiver.track, 'recv')
+            saveMediaTrack(receiver.track, 'recv').catch((err) => log(`saveMediaTrack error: ${err.message}`))
           }
         } else if (receiver.track.kind === 'audio') {
           if (enabledForSession(params.timestampWatermarkAudio)) {
             await recognizeAudioTimestampWatermark(receiver.track)
           }
           if (enabledForSession(params.saveRecvAudioTrack)) {
-            saveMediaTrack(receiver.track, 'recv')
+            saveMediaTrack(receiver.track, 'recv').catch((err) => log(`saveMediaTrack error: ${err.message}`))
           }
         }
       }
@@ -441,7 +441,7 @@ export async function saveTransceiversTracks(
 
 export async function stopSaveTransceiversTracks(direction: 'send' | 'recv', kind: 'audio' | 'video' | 'screen') {
   for (const { track } of filterTransceiversTracks(direction, kind)) {
-    await stopSaveMediaTrack(track)
+    stopSaveMediaTrack(track)
   }
 }
 

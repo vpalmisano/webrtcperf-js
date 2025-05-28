@@ -1,30 +1,37 @@
 import { createWorker, overrides, log, config } from './common'
 
+async function WsClient(url: string) {
+  const client = new WebSocket(url, [])
+  await new Promise<void>((resolve, reject) => {
+    if (client.readyState === WebSocket.OPEN) {
+      resolve()
+    } else if (client.readyState === WebSocket.CLOSED) {
+      reject(new Error('WebSocket closed'))
+    }
+    client.addEventListener('open', () => resolve(), { once: true })
+    client.addEventListener('error', (err) => reject(err), { once: true })
+  })
+  return {
+    write: (data: Uint8Array) => {
+      if (client.readyState !== WebSocket.OPEN) return
+      client.send(data)
+    },
+    close: () => {
+      client.close()
+    },
+  }
+}
+
 const saveFileWorkerFn = () => {
   const debug = (...args: unknown[]) => {
     console.log.apply(null, ['[webrtcperf-savefileworker]', ...args])
-  }
-
-  const wsClient = async (url: string) => {
-    const client = new WebSocket(url, [])
-    await new Promise<void>((resolve, reject) => {
-      if (client.readyState === WebSocket.OPEN) {
-        resolve()
-      } else if (client.readyState === WebSocket.CLOSED) {
-        reject(new Error('WebSocket closed'))
-      }
-      client.addEventListener('open', () => resolve(), { once: true })
-      client.addEventListener('error', (err) => reject(err), { once: true })
-    })
-    return client
   }
 
   const stringToBinary = (str: string) => {
     return str.split('').reduce((prev, cur, index) => prev + (cur.charCodeAt(0) << (8 * index)), 0)
   }
 
-  const writeIvfHeader = (
-    ws: WebSocket,
+  const buildIvfHeader = (
     width: number,
     height: number,
     frameRateDenominator: number,
@@ -43,47 +50,58 @@ const saveFileWorkerFn = () => {
     view.setUint32(20, frameRateNumerator, true)
     view.setUint32(24, 0, true) // frame count
     view.setUint32(28, 0, true) // unused
-    ws.send(data)
+    return new Uint8Array(data)
   }
 
   const websocketControllers = new Map()
 
   onmessage = async ({ data }) => {
-    const { action, id, url, readable, kind, x, y, width, height, frameRate, bitrate } = data
+    const { action, id, writable, readable, kind, x, y, width, height, frameRate, bitrate } = data as {
+      action: string
+      id: string
+      writable: WritableStream
+      readable: ReadableStream
+      kind: string
+      x: number
+      y: number
+      width: number
+      height: number
+      frameRate: number
+      bitrate: number
+    }
     const controller = new AbortController()
-    debug(`action=${action} id=${id} kind=${kind} url=${url} bitrate=${bitrate}`)
+    debug(`action=${action} id=${id} kind=${kind} bitrate=${bitrate}`)
     if (action === 'stop') {
       const controller = websocketControllers.get(id)
       controller?.abort('done')
       return
     }
 
-    const ws = await wsClient(url)
     websocketControllers.set(id, controller)
+    const writer = writable.getWriter()
     if (kind === 'video') {
       let currentWidth = 0
       let currentHeight = 0
       let headerSent = false
       let startTimestamp = -1
-      let lastPts = 0
+      let lastPts = -1
       let lastTimestamp = 0
       const header = new ArrayBuffer(12)
       const view = new DataView(header)
 
       const encoder = new VideoEncoder({
-        output: (chunk) => {
-          if (ws.readyState !== WebSocket.OPEN) return
+        output: async (chunk) => {
           try {
             const { byteLength, timestamp } = chunk
             if (!headerSent) {
-              writeIvfHeader(ws, currentWidth, currentHeight, frameRate, 1, 'VP80')
+              await writer.write(buildIvfHeader(currentWidth, currentHeight, frameRate, 1, 'VP80'))
               headerSent = true
             }
             if (startTimestamp === -1) {
               startTimestamp = timestamp
             }
             const pts = Math.round((frameRate * (timestamp - startTimestamp)) / 1000000)
-            if (pts <= lastPts) {
+            if (lastPts >= 0 && pts <= lastPts) {
               debug(`skip pts: ${pts} <= ${lastPts} timestamp: ${timestamp} lastTimestamp: ${lastTimestamp}`)
               return
             }
@@ -94,11 +112,11 @@ const saveFileWorkerFn = () => {
             const buf = new Uint8Array(header.byteLength + byteLength)
             buf.set(new Uint8Array(header), 0)
             buf.set(new Uint8Array(data), header.byteLength)
-            ws.send(buf)
+            await writer.write(buf)
             lastPts = pts
             lastTimestamp = timestamp
           } catch (err) {
-            debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
+            debug(`saveMediaTrack error=${(err as Error).message}`)
           }
         },
         error: (e) => debug(`encoder error: ${e.message}`),
@@ -121,6 +139,20 @@ const saveFileWorkerFn = () => {
         })
         currentWidth = width
         currentHeight = height
+      }
+
+      const onClose = async () => {
+        try {
+          if (encoder?.state === 'configured') {
+            encoder.flush()
+          }
+          encoder?.close()
+        } catch (err) {
+          debug(`saveMediaTrack error=${(err as Error).message}`)
+        }
+        await writer.close()
+        writer.releaseLock()
+        websocketControllers.delete(id)
       }
 
       const writableStream = new WritableStream(
@@ -150,62 +182,50 @@ const saveFileWorkerFn = () => {
               }
               encoder.encode(frame, { keyFrame: true })
             } catch (err) {
-              debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
+              debug(`saveMediaTrack error=${(err as Error).message}`)
             } finally {
               frame.close()
             }
           },
-          close() {
-            debug(`saveTrack ${url} close`)
-            if (encoder?.state === 'configured') {
-              encoder.flush()
-            }
-            encoder?.close()
-            ws.close()
-            websocketControllers.delete(id)
+          async close() {
+            debug(`saveTrack close`)
+            await onClose()
             postMessage({ name: 'close', id, kind })
           },
-          abort(reason) {
-            debug(`saveTrack ${url} abort reason:`, reason)
-            if (encoder?.state === 'configured') {
-              encoder.flush()
-            }
-            encoder?.close()
-            ws.close()
-            websocketControllers.delete(id)
+          async abort(reason) {
+            debug(`saveTrack abort reason:`, reason)
+            await onClose()
             postMessage({ name: 'close', reason, id, kind })
           },
         },
         new CountQueuingStrategy({ highWaterMark: frameRate * 10 }),
       )
       readable.pipeTo(writableStream, { signal: controller.signal }).catch((err: unknown) => {
-        debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
+        debug(`saveMediaTrack error=${(err as Error).message}`)
       })
     } else {
       const writableStream = new WritableStream(
         {
           async write(frame: AudioData) {
-            if (ws.readyState === WebSocket.OPEN) {
-              try {
-                const { numberOfFrames } = frame
-                const data = new Float32Array(numberOfFrames)
-                frame.copyTo(data, { planeIndex: 0 })
-                ws.send(data)
-              } catch (err) {
-                debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
-              }
+            try {
+              const { numberOfFrames } = frame
+              const data = new Float32Array(numberOfFrames)
+              frame.copyTo(data, { planeIndex: 0 })
+              await writer.write(new Uint8Array(data))
+            } catch (err) {
+              debug(`saveMediaTrack error=${(err as Error).message}`)
             }
             frame.close()
           },
-          close() {
-            debug(`saveTrack ${url} close`)
-            ws.close()
+          async close() {
+            debug(`saveTrack close`)
+            await writer.close()
             websocketControllers.delete(id)
             postMessage({ name: 'close', id, kind })
           },
-          abort(reason) {
-            debug(`saveTrack ${url} abort reason:`, reason)
-            ws.close()
+          async abort(reason) {
+            debug(`saveTrack abort reason:`, reason)
+            await writer.close()
             websocketControllers.delete(id)
             postMessage({ name: 'close', reason, id, kind })
           },
@@ -213,7 +233,7 @@ const saveFileWorkerFn = () => {
         new CountQueuingStrategy({ highWaterMark: 100 }),
       )
       readable.pipeTo(writableStream, { signal: controller.signal }).catch((err: unknown) => {
-        debug(`saveMediaTrack ${url} error=${(err as Error).message}`)
+        debug(`saveMediaTrack error=${(err as Error).message}`)
       })
     }
   }
@@ -279,7 +299,7 @@ export function getSaveFileWorker() {
  * ```
  * The file will sent to the server as `Participant-000000_send_<track.id>.ivf.raw`.
  */
-export function saveMediaTrack(
+export async function saveMediaTrack(
   track: MediaStreamTrack,
   sendrecv: 'send' | 'recv',
   enableStart = 0,
@@ -291,9 +311,6 @@ export function saveMediaTrack(
   frameRate = config.VIDEO_FRAMERATE,
   bitrate = 20_000_000,
 ) {
-  if (!config.SAVE_MEDIA_URL) {
-    throw new Error('config.SAVE_MEDIA_URL is not set')
-  }
   const { id, kind } = track
   if (savingTracks[kind as keyof typeof savingTracks].has(id)) {
     return
@@ -314,14 +331,37 @@ export function saveMediaTrack(
   }
 
   const filename = `${overrides.getParticipantNameForSave(sendrecv, track)}${kind === 'audio' ? '.f32le.raw' : '.ivf.raw'}`
-  const url = `${config.SAVE_MEDIA_URL}${config.SAVE_MEDIA_URL.includes('?') ? '&' : '?'}filename=${filename}`
+  let writable: WritableStream
+  if (config.SAVE_MEDIA_URL) {
+    const destination = `${config.SAVE_MEDIA_URL}${config.SAVE_MEDIA_URL.includes('?') ? '&' : '?'}filename=${filename}`
+    const wsClient = await WsClient(destination)
+    writable = new WritableStream({
+      write(chunk) {
+        wsClient.write(chunk)
+      },
+      close() {
+        wsClient.close()
+      },
+    })
+  } else {
+    const handle = await window.showSaveFilePicker({ suggestedName: filename })
+    const writableStream = await handle.createWritable()
+    writable = new WritableStream({
+      write(chunk) {
+        writableStream.write(chunk)
+      },
+      close() {
+        writableStream.close()
+      },
+    })
+  }
 
   log(`saveMediaTrack ${filename}`)
   getSaveFileWorker().postMessage(
     {
       action: 'start',
       id,
-      url,
+      writable,
       readable,
       kind,
       x,
@@ -331,7 +371,7 @@ export function saveMediaTrack(
       frameRate,
       bitrate,
     },
-    [readable],
+    [writable, readable],
   )
 }
 

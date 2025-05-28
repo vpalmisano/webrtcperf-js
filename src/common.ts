@@ -17,6 +17,8 @@ declare global {
     MediaStreamTrackGenerator: any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     BrowserCaptureMediaStreamTrack: any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    showSaveFilePicker: (options: any) => Promise<any>
   }
 }
 

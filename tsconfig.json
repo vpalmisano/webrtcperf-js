@@ -16,16 +16,22 @@
       "readme": "README.md",
       "projectDocuments": "./docs",
       "theme": "default",
-      "plugin": ["typedoc-plugin-mdn-links"],
       "excludeNotDocumented": true,
       "hideGenerator": true,
-      "cleanOutputDir": true
-    },
-    "navigation": {
-      "includeCategories": true,
-      "includeGroups": true,
-      "includeFolders": true,
-      "compactFolders": false,
-      "excludeReferences": true
+      "cleanOutputDir": true,
+      "plugin": [
+        "typedoc-plugin-mdn-links",
+        "@vpalmisano/typedoc-plugin-ga",
+        "@vpalmisano/typedoc-cookie-consent"
+      ],
+      "gaID": "G-05SF29M4QB",
+      "gaProperties": {
+        "type": "text/plain",
+        "data-category": "analytics"
+      },
+      "cookieConsent": {
+        "enabled": true,
+        "showPreferencesBtn": true
+      }
     }
   }

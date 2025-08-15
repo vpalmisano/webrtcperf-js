@@ -76,8 +76,6 @@ export class FakeStream {
       const { width, height } = mediaTrackConstraintsToResolution(constraints)
       clonedTrack._width = width
       clonedTrack._height = height
-      const canvas = new OffscreenCanvas(clonedTrack._width, clonedTrack._height)
-      const ctx = canvas.getContext('bitmaprenderer')!
       const transformStream = new window.TransformStream(
         {
           async transform(videoFrame: VideoFrame, controller) {
@@ -113,13 +111,8 @@ export class FakeStream {
               resizeQuality: 'high',
             })
             videoFrame.close()
-            canvas.width = _width
-            canvas.height = _height
-            ctx.transferFromImageBitmap(bitmap)
+            const newFrame = new VideoFrame(bitmap, { timestamp: videoFrame.timestamp })
             bitmap.close()
-            const newBitmap = await createImageBitmap(canvas)
-            const newFrame = new VideoFrame(newBitmap, { timestamp: videoFrame.timestamp })
-            newBitmap.close()
             controller.enqueue(newFrame)
           },
           flush(controller) {

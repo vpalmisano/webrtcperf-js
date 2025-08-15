@@ -34,16 +34,26 @@ await webrtcperf.collectPeerConnectionStats(true)
 ```
 
 ### Use a video as getUserMedia default source
+Visit https://webrtc.github.io/samples/src/content/getusermedia/resolution/ with the
+tampermonkey script activated:
 ```js
 webrtcperf.config.MEDIA_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
-// Start audio or video with getUserMedia
+// Select one of the resolutions in the sample page.
+```
+
+To activate the option every time the page is loaded, you can set the following
+localStorage value:
+```js
+localStorage.setItem('webrtcperf.config', JSON.stringify({
+  MEDIA_URL: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+}))
 ```
 
 ### Use a fake screenshare as getDisplayMedia source
 ```js
 await webrtcperf.startFakeScreenshare()
 webrtcperf.overrides.getDisplayMedia = constraints => Object.assign(constraints, { preferCurrentTab: true })
-// Start a screensharing with getDisplayMedia
+// Start a screen sharing with getDisplayMedia.
 ```
 
 ### Measure the audio and video end-to-end delay

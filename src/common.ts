@@ -170,6 +170,10 @@ export const params = {
    * If set, the RTCPeerConnection offer will be modified to include the abs-capture-time extension.
    */
   absCaptureTime: false as EnableValue,
+  /**
+   * If set, the specified codecs will be disabled in the RTCPeerConnection offer.
+   */
+  disabledCodecs: '',
 }
 
 if ('webrtcperf' in window && window.webrtcperf) {

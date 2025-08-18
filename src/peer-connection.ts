@@ -14,6 +14,8 @@ import { saveMediaTrack, stopSaveMediaTrack } from './save-tracks'
 
 const timestampInsertableStreams = !!params.timestampInsertableStreams
 
+export { sdpTransform }
+
 export let peerConnectionsCreated = 0
 export let peerConnectionsConnected = 0
 export let peerConnectionsDisconnected = 0
@@ -110,6 +112,39 @@ function addAbsCaptureTime(offer: RTCSessionDescriptionInit) {
     offer.sdp = sdpTransform.write(sdp)
     log('addAbsCaptureTime', offer)
   }
+}
+
+function filterCodecs(description: RTCSessionDescriptionInit) {
+  const codecs = params.disabledCodecs
+    .toLowerCase()
+    .split(',')
+    .map((c) => c.trim())
+    .filter((c) => c.length > 0)
+  if (!codecs.length || !description.sdp) return description
+  const desc = sdpTransform.parse(description.sdp)
+  const removed = new Set<string>()
+  desc.media.forEach((media) => {
+    media.rtp
+      .filter((r) => codecs.includes(r.codec.toLowerCase()))
+      .forEach((r) => {
+        const payload = r.payload
+        removed.add(r.codec)
+        media.fmtp = media.fmtp.filter((r) => r.payload !== payload && r.payload !== payload + 1)
+        if (media.rtcpFb) {
+          media.rtcpFb = media.rtcpFb.filter((r) => r.payload !== payload && r.payload !== payload + 1)
+        }
+        media.rtp = media.rtp.filter((r) => r.payload !== payload && r.payload !== payload + 1)
+        if (media.payloads) {
+          media.payloads = media.payloads
+            .split(' ')
+            .filter((r) => r !== payload.toString())
+            .join(' ')
+        }
+      })
+  })
+  description.sdp = sdpTransform.write(desc)
+  log(`filterCodecs removed codecs: ${Array.from(removed).join(', ')}`)
+  return description
 }
 
 window.RTCPeerConnection = class extends RTCPeerConnection {
@@ -255,6 +290,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
       this.debug(`createOffer`, { options, offer })
     }
     addAbsCaptureTime(offer)
+    filterCodecs(offer)
     return offer
   }) as typeof RTCPeerConnection.prototype.createOffer
 

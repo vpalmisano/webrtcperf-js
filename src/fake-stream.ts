@@ -82,6 +82,10 @@ export class FakeStream {
             let { codedWidth, codedHeight } = videoFrame
             let { x, y } = { x: 0, y: 0 }
             let { _width, _height } = clonedTrack
+            if (_width === codedWidth && _height === codedHeight) {
+              controller.enqueue(videoFrame)
+              return
+            }
             const aspectRatio = codedWidth / codedHeight
             if (!_height && _width) {
               _height = Math.round(_width / aspectRatio)

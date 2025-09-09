@@ -334,7 +334,12 @@ if (window.webrtcperf_serializedConsoleLog) {
         .join(' ')
 
       void window.webrtcperf_serializedConsoleLog(method, msg)
-      return nativeFn(...args)
+      try {
+        return nativeFn(...args)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (e) {
+        // Ignore error.
+      }
     }
   })
 }

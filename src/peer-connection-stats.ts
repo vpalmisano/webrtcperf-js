@@ -386,7 +386,7 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
   if (!track) {
     return
   }
-  const trackId = overrides.getReceiverParticipantName(track) + '-' + track.kind[0]
+  const trackId = 'r-' + overrides.getReceiverParticipantName(track) + '-' + track.kind[0]
   const stats = await pc.getStats(track)
   const values: InboundTrackStats = {
     enabled: isRecvTrackEnabled(track),

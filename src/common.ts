@@ -1,6 +1,15 @@
 import { Action } from './actions'
 import { FakeScreenshareParams } from './screenshare'
 
+export type RtcTranformEvent = Event & {
+  transformer: {
+    readonly readable: ReadableStream
+    readonly writable: WritableStream
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    readonly options: any
+  }
+}
+
 declare global {
   interface Window {
     webrtcperf?: {
@@ -19,6 +28,7 @@ declare global {
     BrowserCaptureMediaStreamTrack: any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     showSaveFilePicker: (options: any) => Promise<any>
+    onrtctransform: (event: RtcTranformEvent) => void
   }
 }
 
@@ -120,7 +130,10 @@ export const params = {
    * It set, a grid will be drawn on the video track.
    */
   drawWatermarkGrid: false,
-  timestampInsertableStreams: false,
+  /**
+   * It set, it will debug the encoded insertable streams.
+   */
+  debugInsertableStreams: false,
   /**
    * It set, the peer connection will run with additional debug logs.
    */

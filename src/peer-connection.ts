@@ -12,8 +12,6 @@ import {
 import { handleTransceiverForJitterBufferTarget, handleTransceiverForPlayoutDelayHint } from './playout-delay-hint'
 import { saveMediaTrack, stopSaveMediaTrack } from './save-tracks'
 
-const timestampInsertableStreams = !!params.timestampInsertableStreams
-
 export { sdpTransform }
 
 export let peerConnectionsCreated = 0
@@ -148,13 +146,12 @@ function filterCodecs(description: RTCSessionDescriptionInit) {
 }
 
 window.RTCPeerConnection = class extends RTCPeerConnection {
-  id: number
-  encodedInsertableStreams: boolean
-  debug: (...args: unknown[]) => void
+  private id: number
+  private encodedInsertableStreams: boolean
+  private debug: (...args: unknown[]) => void
 
   constructor(conf?: RTCConfiguration & { encodedInsertableStreams?: boolean; sdpSemantics?: string }) {
-    const encodedInsertableStreams =
-      conf?.encodedInsertableStreams || (timestampInsertableStreams && conf?.sdpSemantics === 'unified-plan')
+    const encodedInsertableStreams = conf?.encodedInsertableStreams || enabledForSession(params.debugInsertableStreams)
 
     const id = peerConnectionsCreated++
     super({
@@ -206,9 +203,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
       const { receiver, transceiver, streams } = event
       if (receiver?.track && receiver.track.label !== 'probator') {
         this.debug(`ontrack ${receiver.track.kind} ${receiver.track.id}`, { streams })
-        /* if (encodedInsertableStreams && timestampInsertableStreams) {
-          webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)
-        } */
+        handleTransceiverForInsertableStreams(id, transceiver)
 
         /**
          * @event {CustomEvent} webrtcperf:peerconnection:track
@@ -351,9 +346,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
           track = overrides.replaceTrack(track)
         }
         await replaceTrackNative(track)
-        /* if (encodedInsertableStreams && timestampInsertableStreams) {
-          webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)
-        } */
+        handleTransceiverForInsertableStreams(this.id, transceiver)
         this.checkSaveStream(transceiver)
       }
     }
@@ -367,9 +360,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
       })
     } */
 
-    /* if (encodedInsertableStreams && timestampInsertableStreams) {
-      webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)
-    } */
+    handleTransceiverForInsertableStreams(this.id, transceiver)
 
     handleTransceiverForPlayoutDelayHint(this.id, transceiver, 'addTransceiver')
     handleTransceiverForJitterBufferTarget(this.id, transceiver, 'addTransceiver')
@@ -382,9 +373,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
     addStreamNative(stream)
     for (const transceiver of this.getTransceivers()) {
       if (['sendonly', 'sendrecv'].includes(transceiver.direction)) {
-        /* if (encodedInsertableStreams && timestampInsertableStreams) {
-          webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)
-        } */
+        handleTransceiverForInsertableStreams(this.id, transceiver)
         handleTransceiverForPlayoutDelayHint(this.id, transceiver, 'addStream')
         handleTransceiverForJitterBufferTarget(this.id, transceiver, 'addStream')
         this.checkSaveStream(transceiver)
@@ -397,9 +386,7 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
     const sender = super.addTrack(track, ...streams)
     for (const transceiver of this.getTransceivers()) {
       if (['sendonly', 'sendrecv'].includes(transceiver.direction)) {
-        /* if (encodedInsertableStreams && timestampInsertableStreams) {
-          webrtcperf.handleTransceiverForInsertableStreams(id, transceiver)
-        } */
+        handleTransceiverForInsertableStreams(this.id, transceiver)
         handleTransceiverForPlayoutDelayHint(this.id, transceiver, 'addTrack')
         handleTransceiverForJitterBufferTarget(this.id, transceiver, 'addTrack')
         this.checkSaveStream(transceiver)
@@ -488,5 +475,81 @@ export function setTransceiversTracks(
 ) {
   for (const { track } of filterTransceiversTracks(direction, kind)) {
     track.enabled = enabled
+  }
+}
+
+// Insertable streams debug.
+/* const scriptTransformWorkerFn = () => {
+  self.onrtctransform = (event: RtcTranformEvent) => {
+    const { readable, writable, options } = event.transformer
+    const debug = (...args: unknown[]) =>
+      console.log.apply(null, [`[webrtcperf-script-transform-worker] [${options.name}]`, ...args])
+    const transform = new TransformStream({
+      start() {
+        debug('start')
+      },
+      flush() {
+        debug('flush')
+      },
+      async transform(encodedFrame, controller) {
+        debug(
+          `transform frame type: ${encodedFrame.type}, timestamp: ${encodedFrame.timestamp}, duration: ${encodedFrame.duration}, length: ${encodedFrame.data.byteLength}`,
+          encodedFrame,
+        )
+        controller.enqueue(encodedFrame)
+      },
+    })
+    readable.pipeThrough(transform).pipeTo(writable)
+  }
+}
+const worker = createWorker(scriptTransformWorkerFn) */
+
+function handleTransceiverForInsertableStreams(id: number, transceiver: RTCRtpTransceiver) {
+  if (!enabledForSession(params.debugInsertableStreams)) return
+  log(`RTCPeerConnection-${id} handleTransceiverForInsertableStreams ${transceiver.direction}`)
+  /* if (transceiver.sender && !transceiver.sender.transform) {
+    transceiver.sender.transform = new RTCRtpScriptTransform(worker, {
+      name: 'sender',
+      kind: transceiver.sender.track?.kind,
+    })
+  }
+  if (transceiver.receiver && !transceiver.receiver.transform) {
+    transceiver.receiver.transform = new RTCRtpScriptTransform(worker, {
+      name: 'receiver',
+      kind: transceiver.receiver.track?.kind,
+    })
+  } */
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { sender, receiver } = transceiver as any
+
+  const handleEncodedStreams = (
+    { readable, writable }: { readable: ReadableStream; writable: WritableStream },
+    direction: string,
+  ) => {
+    const transform = new TransformStream({
+      async transform(encodedFrame: RTCEncodedVideoFrame, controller: TransformStreamDefaultController) {
+        const { type, timestamp, data } = encodedFrame
+        const { mimeType, width, height, spatialIndex, temporalIndex } = encodedFrame.getMetadata()
+        if (mimeType?.startsWith('video/')) {
+          log(
+            `${direction} ${mimeType} (${type}) t: ${timestamp} size: ${data.byteLength} ${width}x${height} S${spatialIndex}T${temporalIndex}`,
+          )
+        } else {
+          log(`${direction} ${mimeType} t: ${timestamp} size: ${data.byteLength}`)
+        }
+        controller.enqueue(encodedFrame)
+      },
+    })
+    readable.pipeThrough(transform).pipeTo(writable)
+  }
+
+  if (sender && !sender._encodedStreams) {
+    sender._encodedStreams = sender.createEncodedStreams()
+    handleEncodedStreams(sender._encodedStreams, 'send')
+  }
+  if (receiver && receiver.track?.label !== 'probator' && !receiver._encodedStreams) {
+    receiver._encodedStreams = receiver.createEncodedStreams()
+    handleEncodedStreams(receiver._encodedStreams, 'recv')
   }
 }

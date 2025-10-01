@@ -127,6 +127,10 @@ export const params = {
    */
   fakeScreenshare: null as FakeScreenshareParams | null,
   /**
+   * It set, the fake screenshare will be enabled.
+   */
+  fakeScreenshareEnabled: false as EnableValue,
+  /**
    * It set, a grid will be drawn on the video track.
    */
   drawWatermarkGrid: false,

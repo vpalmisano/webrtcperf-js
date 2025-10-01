@@ -13,7 +13,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "version": "1.1.14",
+  "version": "1.1.15",
   "main": "dist/webrtcperf.js",
   "files": [
     "dist"
@@ -24,13 +24,13 @@
     "sdp-transform": "^2.15.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.35.0",
+    "@eslint/js": "^9.36.0",
     "@types/sdp-transform": "^2.15.0",
-    "@typescript-eslint/eslint-plugin": "^8.44.0",
-    "@typescript-eslint/parser": "^8.44.0",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
     "@vpalmisano/typedoc-cookie-consent": "^0.0.4",
     "@vpalmisano/typedoc-plugin-ga": "^1.0.6",
-    "eslint": "^9.35.0",
+    "eslint": "^9.36.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.4",
     "globals": "^16.4.0",
@@ -39,7 +39,7 @@
     "typedoc": "^0.28.13",
     "typedoc-plugin-mdn-links": "^5.0.9",
     "typescript": "^5.9.2",
-    "typescript-eslint": "^8.44.0",
+    "typescript-eslint": "^8.44.1",
     "webpack": "^5.101.3",
     "webpack-cli": "^6.0.1"
   },

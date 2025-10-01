@@ -2,6 +2,7 @@ import { config, enabledForSession, log, overrides, params, sleep } from './comm
 import { applyAudioTimestampWatermark } from './e2e-audio-stats'
 import { applyVideoTimestampWatermark } from './e2e-video-stats'
 import { FakeStream } from './fake-stream'
+import { startFakeScreenshare } from './screenshare'
 
 async function applyGetDisplayMediaCrop(mediaStream: MediaStream) {
   if (!config.GET_DISPLAY_MEDIA_CROP) return
@@ -240,6 +241,12 @@ if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
 
     if ('webrtcperf_startFakeScreenshare' in window) {
       await window.webrtcperf_startFakeScreenshare()
+    } else if (enabledForSession(params.fakeScreenshareEnabled)) {
+      await startFakeScreenshare()
+      if (!constraints) {
+        constraints = {}
+      }
+      Object.assign(constraints, { preferCurrentTab: true, selfBrowserSurface: 'include', surfaceSwitching: 'exclude' })
     }
 
     if (overrides.getDisplayMedia) {

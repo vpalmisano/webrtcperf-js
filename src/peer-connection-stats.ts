@@ -103,9 +103,12 @@ export type InboundRtpStats = {
   bytesReceived: number
   headerBytesReceived: number
   decoderImplementation: string
+  qpSum: number
   framesDecoded: number
+  keyFramesDecoded: number
   totalDecodeTime: number
   framesReceived: number
+  framesDropped: number
   frameWidth: number
   frameHeight: number
   frameRate: number
@@ -125,7 +128,6 @@ export type InboundRtpStats = {
   concealmentEvents: number
   insertedSamplesForDeceleration: number
   removedSamplesForAcceleration: number
-  keyFramesDecoded: number
   bitrate?: number
   framesPerSecond?: number
   packetsLossRate?: number
@@ -139,6 +141,7 @@ export type InboundRtpStats = {
   captureTimestamp?: number
   estimatedPlayoutTimestamp?: number
   endToEndDelay?: number
+  qp?: number
 }
 
 export type TrackStats = {
@@ -426,9 +429,12 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
         bytesReceived: s.bytesReceived,
         headerBytesReceived: s.headerBytesReceived,
         decoderImplementation: s.decoderImplementation,
+        qpSum: s.qpSum,
         framesDecoded: s.framesDecoded,
+        keyFramesDecoded: s.keyFramesDecoded,
         totalDecodeTime: s.totalDecodeTime,
         framesReceived: s.framesReceived,
+        framesDropped: s.framesDropped,
         frameWidth: s.frameWidth,
         frameHeight: s.frameHeight,
         frameRate: s.framesPerSecond,
@@ -448,7 +454,6 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
         concealmentEvents: s.concealmentEvents,
         insertedSamplesForDeceleration: s.insertedSamplesForDeceleration,
         removedSamplesForAcceleration: s.removedSamplesForAcceleration,
-        keyFramesDecoded: s.keyFramesDecoded,
         captureTimestamp,
         senderCaptureTimeOffset,
         estimatedPlayoutTimestamp: s.estimatedPlayoutTimestamp,
@@ -500,11 +505,17 @@ async function getReceiverStats(receiver: RTCRtpReceiver, pc: RTCPeerConnection,
         values.inboundRtp.transportResponsesReceived,
         prevStats.values.inboundRtp.transportResponsesReceived,
       )
-      // Update decode latency.
+      // Update decode latency and qp.
       if (values.inboundRtp.kind === 'video') {
         values.inboundRtp.decodeLatency = averageFromTotal(
           values.inboundRtp.totalDecodeTime,
           prevStats.values.inboundRtp.totalDecodeTime,
+          values.inboundRtp.framesDecoded,
+          prevStats.values.inboundRtp.framesDecoded,
+        )
+        values.inboundRtp.qp = averageFromTotal(
+          values.inboundRtp.qpSum,
+          prevStats.values.inboundRtp.qpSum,
           values.inboundRtp.framesDecoded,
           prevStats.values.inboundRtp.framesDecoded,
         )

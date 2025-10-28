@@ -23,15 +23,55 @@ function mediaTrackConstraintsToResolution(constraints?: MediaTrackConstraints) 
   return { width: w, height: h }
 }
 
+/**
+ * It saves the file to the browser's storage and returns the storage:// URL of the saved file.
+ * @param file - The file to save to storage. If not provided, it will open a file picker to select a file.
+ * @returns The storage:// URL of the saved file.
+ */
+export async function saveMediaToStorage(file?: File) {
+  if (!file) {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'video/*'
+    file = await new Promise<File | undefined>((resolve) => {
+      input.onchange = () => {
+        const files = input.files
+        if (files && files.length > 0) {
+          resolve(files[0])
+        } else {
+          resolve(undefined)
+        }
+      }
+      input.click()
+    })
+  }
+  if (!file) return
+  const storageRoot = await navigator.storage.getDirectory()
+  const handle = await storageRoot.getFileHandle(file.name, { create: true })
+  const fd = await handle.createWritable()
+  const blob = new Blob([file], { type: file.type })
+  await fd.write(blob)
+  await fd.close()
+  return `storage://${file.name}`
+}
+
+async function loadMediaFromStorage(name: string) {
+  const storageRoot = await navigator.storage.getDirectory()
+  const handle = await storageRoot.getFileHandle(name)
+  const file = await handle.getFile()
+  return URL.createObjectURL(file)
+}
+
 export class FakeStream {
   private refcount = 0
+  private readonly url: string
   private readonly element: HTMLVideoElement | HTMLAudioElement
   private readonly streamPromise: Promise<MediaStream>
 
   constructor(url: string, elementType = 'video') {
     log(`[FakeStream] new ${url}`)
+    this.url = url
     this.element = document.createElement(elementType === 'video' ? 'video' : 'audio')
-    this.element.src = url
     this.element.loop = true
     this.element.crossOrigin = 'anonymous'
     this.element.autoplay = true
@@ -39,7 +79,12 @@ export class FakeStream {
     this.streamPromise = this.createStream()
   }
 
-  private createStream() {
+  private async createStream() {
+    if (this.url.startsWith('storage://')) {
+      this.element.src = await loadMediaFromStorage(this.url.replace('storage://', ''))
+    } else {
+      this.element.src = this.url
+    }
     return new Promise<MediaStream>((resolve, reject) => {
       this.element.addEventListener(
         'loadeddata',

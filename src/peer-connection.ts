@@ -553,3 +553,88 @@ function handleTransceiverForInsertableStreams(id: number, transceiver: RTCRtpTr
     handleEncodedStreams(receiver._encodedStreams, 'recv')
   }
 }
+
+/**
+ * It detects voice activity on an audio track and calls the callback with the start and stop times.
+ * @param track - The track to detect voice activity on.
+ * @param callback - The callback to call with the start and stop times.
+ * @returns The cleanup function to stop the detection.
+ */
+export function detectVoiceActivity(
+  track: MediaStreamTrack,
+  callback?: (event: 'start' | 'stop', startTime: number, stopTime: number) => void,
+) {
+  if (track.kind !== 'audio' || track.readyState !== 'live') return
+  log(`detectVoiceActivity track id: ${track.id}`)
+  const audioCtx = new AudioContext({
+    sampleRate: 48000,
+    latencyHint: 'interactive',
+  })
+  const source = audioCtx.createMediaStreamSource(new MediaStream([track]))
+  const analyser = audioCtx.createAnalyser()
+  analyser.fftSize = 512
+  source.connect(analyser)
+
+  const bufferLength = analyser.fftSize
+  const dataArray = new Float32Array(bufferLength)
+
+  let startTime = 0
+  let stopTime = 0
+
+  const { readable } = new window.MediaStreamTrackProcessor({ track })
+  const controller = new AbortController()
+  readable
+    .pipeTo(
+      new WritableStream({
+        write(audioFrame: AudioData) {
+          if (audioCtx.state === 'running') {
+            analyser.getFloatTimeDomainData(dataArray)
+            const max = Math.max(...dataArray)
+            if (max > 0.1 && !startTime) {
+              startTime = Date.now()
+              if (stopTime) {
+                log(
+                  `voice started track id: ${track.id} max: ${max} at ${startTime} silence duration: ${startTime - stopTime}ms`,
+                )
+                callback?.('start', startTime, stopTime)
+              }
+              stopTime = 0
+            } else if (max <= 0.001 && startTime && !stopTime) {
+              stopTime = Date.now()
+              log(
+                `voice stopped track id: ${track.id} max: ${max} at ${stopTime} voice duration: ${stopTime - startTime}ms`,
+              )
+              callback?.('stop', startTime, stopTime)
+              startTime = 0
+            }
+          }
+          audioFrame.close()
+        },
+        close() {
+          cleanup('close')
+        },
+        abort(reason) {
+          cleanup(reason)
+        },
+      }),
+      { signal: controller.signal },
+    )
+    .catch((err) => log(`detectVoiceActivity error: ${err.message}`))
+
+  const cleanup = (reason = 'unknown') => {
+    if (audioCtx.state !== 'closed') {
+      log(`detectVoiceActivity track id: ${track.id} cleanup reason: ${reason}`)
+      controller.abort(reason)
+      source.disconnect()
+      audioCtx.close()
+    }
+  }
+
+  const trackStop = track.stop.bind(track)
+  track.stop = () => {
+    trackStop()
+    cleanup('stop')
+  }
+
+  return cleanup
+}

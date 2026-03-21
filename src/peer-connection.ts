@@ -557,18 +557,21 @@ function handleTransceiverForInsertableStreams(id: number, transceiver: RTCRtpTr
 /**
  * It detects voice activity on an audio track and calls the callback with the start and stop times.
  * @param track - The track to detect voice activity on.
+ * @param lowThreshold - The low threshold to detect voice stop.
+ * @param highThreshold - The high threshold to detect voice start.
  * @param callback - The callback to call with the start and stop times.
  * @returns The cleanup function to stop the detection.
  */
 export function detectVoiceActivity(
   track: MediaStreamTrack,
+  lowThreshold = 0.001,
+  highThreshold = 0.1,
   callback?: (event: 'start' | 'stop', startTime: number, stopTime: number) => void,
 ) {
   if (track.kind !== 'audio' || track.readyState !== 'live') return
   log(`detectVoiceActivity track id: ${track.id}`)
   const audioCtx = new AudioContext({
     sampleRate: 48000,
-    latencyHint: 'interactive',
   })
   const source = audioCtx.createMediaStreamSource(new MediaStream([track]))
   const analyser = audioCtx.createAnalyser()
@@ -590,7 +593,7 @@ export function detectVoiceActivity(
           if (audioCtx.state === 'running') {
             analyser.getFloatTimeDomainData(dataArray)
             const max = Math.max(...dataArray)
-            if (max > 0.1 && !startTime) {
+            if (max > highThreshold && !startTime) {
               startTime = Date.now()
               if (stopTime) {
                 log(
@@ -599,7 +602,7 @@ export function detectVoiceActivity(
                 callback?.('start', startTime, stopTime)
               }
               stopTime = 0
-            } else if (max <= 0.001 && startTime && !stopTime) {
+            } else if (max <= lowThreshold && startTime && !stopTime) {
               stopTime = Date.now()
               log(
                 `voice stopped track id: ${track.id} max: ${max} at ${stopTime} voice duration: ${stopTime - startTime}ms`,

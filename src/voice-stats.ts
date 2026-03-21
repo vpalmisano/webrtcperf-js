@@ -94,9 +94,14 @@ export function detectVoiceActivity(
  * The estimation is based on the voice activity detection between the two tracks.
  * @param sendTrack - The send track to estimate the answer delay.
  * @param recvTrack - The recv track to estimate the answer delay.
+ * @param callback - The callback to call with the send end time and recv start time.
  * @returns The cleanup function to stop the estimation.
  */
-export function estimateAnswerDelay(sendTrack: MediaStreamTrack, recvTrack: MediaStreamTrack) {
+export function estimateAnswerDelay(
+  sendTrack: MediaStreamTrack,
+  recvTrack: MediaStreamTrack,
+  callback?: (sendEndTime: number, recvStartTime: number) => void,
+) {
   if (sendTrack.kind !== 'audio' || recvTrack.kind !== 'audio') return
 
   log(`estimateAnswerDelay sendTrack id: ${sendTrack.id} recvTrack id: ${recvTrack.id}`)
@@ -118,6 +123,7 @@ export function estimateAnswerDelay(sendTrack: MediaStreamTrack, recvTrack: Medi
       log(`estimateAnswerDelay delay: ${delay}s`)
       sendEndTime = 0
       recvStartTime = 0
+      callback?.(sendEndTime, recvStartTime)
     }
   })
 

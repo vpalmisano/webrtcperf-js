@@ -93,6 +93,10 @@ export const config = {
    */
   AUDIO_URL: '',
   /**
+   * If set, the fake media will loop.
+   */
+  LOOP_MEDIA: true,
+  /**
    * The URL of the WebSocket server to save the the media content.
    */
   SAVE_MEDIA_URL: '',

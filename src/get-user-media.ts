@@ -139,7 +139,7 @@ function collectMediaTracks(mediaStream: MediaStream, onEnded?: (track: MediaStr
 export const getFakeTrack = async (kind: 'audio' | 'video', constraints?: MediaTrackConstraints) => {
   const configUrl = config.MEDIA_URL || config.VIDEO_URL || config.AUDIO_URL
   if (configUrl) {
-    await fakeStreamManager.setMedia(configUrl)
+    await fakeStreamManager.setMedia(configUrl, config.LOOP_MEDIA)
   }
   return fakeStreamManager.getTrack(kind, constraints)
 }
@@ -249,24 +249,22 @@ if (navigator.mediaDevices && 'setCaptureHandleConfig' in navigator.mediaDevices
 if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
   const NativeEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
   navigator.mediaDevices.enumerateDevices = async () => {
-    if (config.VIDEO_URL || config.AUDIO_URL || config.MEDIA_URL) {
-      const devices = [] as MediaDeviceInfo[]
-      if (config.VIDEO_URL || config.MEDIA_URL) {
-        devices.push({
+    const useFakeMedia = enabledForSession(params.fakeMediaEnabled) || config.MEDIA_URL
+    if (useFakeMedia) {
+      const devices = [
+        {
           deviceId: 'webrtcperf-video',
           kind: 'videoinput',
           label: 'WebRTCPerf Video',
           groupId: 'webrtcperf',
-        } as MediaDeviceInfo)
-      }
-      if (config.AUDIO_URL || config.MEDIA_URL) {
-        devices.push({
+        },
+        {
           deviceId: 'webrtcperf-audio',
           kind: 'audioinput',
           label: 'WebRTCPerf Audio',
           groupId: 'webrtcperf',
-        } as MediaDeviceInfo)
-      }
+        },
+      ] as MediaDeviceInfo[]
       return devices
     }
     const devices = await NativeEnumerateDevices()

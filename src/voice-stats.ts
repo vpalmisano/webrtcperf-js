@@ -42,12 +42,10 @@ export function detectVoiceActivity(
             const now = Date.now()
             if (max > highThreshold && !startTime) {
               startTime = now
-              if (stopTime) {
-                log(
-                  `voice started track id: ${track.id} max: ${max} at ${startTime} silence duration: ${startTime - stopTime}ms`,
-                )
-                callback?.('start', startTime, stopTime)
-              }
+              log(
+                `voice started track id: ${track.id} max: ${max} at ${startTime} ${stopTime ? `silence duration: ${startTime - stopTime}ms` : ''}`,
+              )
+              callback?.('start', startTime, stopTime)
               stopTime = 0
             } else if (max <= lowThreshold && startTime && !stopTime && now - startTime > 100) {
               stopTime = now
@@ -90,21 +88,21 @@ export function detectVoiceActivity(
 }
 
 /**
- * Estimates the answer delay between two audio tracks.
- * The estimation is based on the voice activity detection between the two tracks.
+ * Estimates the question to answer delay.
+ * The estimation is based on the voice activity detection between the question and answer audio tracks.
  * @param sendTrack - The send track to estimate the answer delay.
  * @param recvTrack - The recv track to estimate the answer delay.
  * @param callback - The callback to call with the send end time and recv start time.
  * @returns The cleanup function to stop the estimation.
  */
-export function estimateAnswerDelay(
+export function estimateQuestionAnswerDelay(
   sendTrack: MediaStreamTrack,
   recvTrack: MediaStreamTrack,
   callback?: (sendEndTime: number, recvStartTime: number) => void,
 ) {
   if (sendTrack.kind !== 'audio' || recvTrack.kind !== 'audio') return
 
-  log(`estimateAnswerDelay sendTrack id: ${sendTrack.id} recvTrack id: ${recvTrack.id}`)
+  log(`estimateQuestionAnswerDelay sendTrack id: ${sendTrack.id} recvTrack id: ${recvTrack.id}`)
 
   let sendEndTime = 0
   let recvStartTime = 0
@@ -120,7 +118,7 @@ export function estimateAnswerDelay(
     }
     if (sendEndTime && recvStartTime && recvStartTime > sendEndTime) {
       const delay = (recvStartTime - sendEndTime) / 1000
-      log(`estimateAnswerDelay delay: ${delay}s`)
+      log(`estimateQuestionAnswerDelay delay: ${delay}s`)
       sendEndTime = 0
       recvStartTime = 0
       callback?.(sendEndTime, recvStartTime)

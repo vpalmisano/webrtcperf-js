@@ -38,15 +38,18 @@ Visit https://webrtc.github.io/samples/src/content/getusermedia/resolution/ with
 tampermonkey script activated:
 ```js
 webrtcperf.config.MEDIA_URL = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
-// Select one of the resolutions in the sample page.
 ```
 
-To activate the option every time the page is loaded, you can set the following
-localStorage value:
+Reload the page and start using the getUserMedia API.
+
+You can store the media file in the page local storage and make the configuration persistent:
+
 ```js
-localStorage.setItem('webrtcperf.config', JSON.stringify({
-  MEDIA_URL: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-}))
+url = await webrtcperf.saveMediaToStorage()
+localStorage.setItem('webrtcperf.config', JSON.stringify({ MEDIA_URL: url }))
+
+// or change the value on-fly:
+await webrtcperf.setMedia(url, true)
 ```
 
 ### Use a fake screenshare as getDisplayMedia source

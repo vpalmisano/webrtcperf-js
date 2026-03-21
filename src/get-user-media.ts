@@ -1,7 +1,7 @@
 import { config, enabledForSession, log, overrides, params, sleep } from './common'
 import { applyAudioTimestampWatermark } from './e2e-audio-stats'
 import { applyVideoTimestampWatermark } from './e2e-video-stats'
-import { FakeStream } from './fake-stream'
+import { fakeStreamManager, syncFakeTracks } from './fake-stream'
 import { startFakeScreenshare } from './screenshare'
 
 async function applyGetDisplayMediaCrop(mediaStream: MediaStream) {
@@ -136,51 +136,12 @@ function collectMediaTracks(mediaStream: MediaStream, onEnded?: (track: MediaStr
   })
 }
 
-export const fakeStreams = {
-  media: null as FakeStream | null,
-  audio: null as FakeStream | null,
-  video: null as FakeStream | null,
-}
-
-/**
- * Synchronizes all the created fake tracks.
- * @param {number | undefined} [currentTime] - If specified, the current time to set.
- */
-export function syncFakeTracks(currentTime?: number) {
-  for (const kind of ['audio', 'video']) {
-    const stream = fakeStreams[kind as keyof typeof fakeStreams]
-    stream?.sync(currentTime)
-  }
-  fakeStreams.media?.sync(currentTime)
-}
-
 export const getFakeTrack = async (kind: 'audio' | 'video', constraints?: MediaTrackConstraints) => {
-  if (config.MEDIA_URL && !fakeStreams.media) {
-    fakeStreams.media = new FakeStream(config.MEDIA_URL)
-  } else if (kind === 'video' && config.VIDEO_URL && !fakeStreams.video) {
-    fakeStreams.video = new FakeStream(config.VIDEO_URL, kind)
-  } else if (kind === 'audio' && config.AUDIO_URL && !fakeStreams.audio) {
-    fakeStreams.audio = new FakeStream(config.AUDIO_URL, kind)
+  const configUrl = config.MEDIA_URL || config.VIDEO_URL || config.AUDIO_URL
+  if (configUrl) {
+    await fakeStreamManager.setMedia(configUrl)
   }
-  const stream = fakeStreams.media || (kind === 'video' ? fakeStreams.video : fakeStreams.audio)
-  if (!stream) {
-    throw new Error(`[getFakeTrack] stream not found`)
-  }
-  return stream.getTrack(kind, constraints)
-}
-
-if ('getUserMedia' in navigator) {
-  const nativeGetUserMedia = (
-    navigator.getUserMedia as (constraints: MediaStreamConstraints, ...args: unknown[]) => Promise<MediaStream>
-  ).bind(navigator)
-  navigator.getUserMedia = async function (constraints: MediaStreamConstraints, ...args: unknown[]) {
-    log(`getUserMedia:`, constraints)
-    if (overrides.getUserMedia) {
-      constraints = overrides.getUserMedia(constraints)
-      log(`getUserMedia override:`, JSON.stringify(constraints))
-    }
-    return nativeGetUserMedia(constraints, ...args)
-  }
+  return fakeStreamManager.getTrack(kind, constraints)
 }
 
 if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -196,12 +157,13 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     }
 
     let mediaStream = new MediaStream()
+    const useFakeMedia = enabledForSession(params.fakeMediaEnabled) || config.MEDIA_URL
 
-    if (constraints?.audio && (config.AUDIO_URL || config.MEDIA_URL)) {
+    if (constraints?.audio && useFakeMedia) {
       const audioTrack = await getFakeTrack('audio')
       mediaStream.addTrack(audioTrack)
     }
-    if (constraints?.video && (config.VIDEO_URL || config.MEDIA_URL)) {
+    if (constraints?.video && useFakeMedia) {
       const videoTrack = await getFakeTrack(
         'video',
         typeof constraints.video === 'object' ? constraints.video : undefined,

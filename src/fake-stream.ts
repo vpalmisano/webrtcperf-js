@@ -1,27 +1,24 @@
 import { log } from './common'
 
-type MediaStreamTrackExt = MediaStreamTrack & {
-  _width?: number
-  _height?: number
+export async function openMediaPicker() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'video/*,audio/*'
+  const file = await new Promise<File | undefined>((resolve) => {
+    input.onchange = () => {
+      const files = input.files
+      if (files && files.length > 0) {
+        resolve(files[0])
+      } else {
+        resolve(undefined)
+      }
+    }
+    input.click()
+  })
+  return file
 }
 
-function mediaTrackConstraintsToResolution(constraints?: MediaTrackConstraints) {
-  if (!constraints) {
-    return { width: 0, height: 0 }
-  }
-  let w = 0
-  let h = 0
-  if (typeof constraints === 'object') {
-    const { width, height } = constraints
-    if (width) {
-      w = typeof width === 'number' ? width : width.exact || width.ideal || 0
-    }
-    if (height) {
-      h = typeof height === 'number' ? height : height.exact || height.ideal || 0
-    }
-  }
-  return { width: w, height: h }
-}
+const STORAGE_DIRECTORY = 'webrtcperf'
 
 /**
  * It saves the file to the browser's storage and returns the storage:// URL of the saved file.
@@ -30,198 +27,297 @@ function mediaTrackConstraintsToResolution(constraints?: MediaTrackConstraints) 
  */
 export async function saveMediaToStorage(file?: File) {
   if (!file) {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'video/*'
-    file = await new Promise<File | undefined>((resolve) => {
-      input.onchange = () => {
-        const files = input.files
-        if (files && files.length > 0) {
-          resolve(files[0])
-        } else {
-          resolve(undefined)
-        }
-      }
-      input.click()
-    })
+    file = await openMediaPicker()
   }
   if (!file) return
+  log(`[FakeStreamManager] saveMediaToStorage "${file.name}"`)
   const storageRoot = await navigator.storage.getDirectory()
-  const handle = await storageRoot.getFileHandle(file.name, { create: true })
+  const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY, { create: true })
+  const handle = await storageDir.getFileHandle(file.name, { create: true })
   const fd = await handle.createWritable()
   const blob = new Blob([file], { type: file.type })
   await fd.write(blob)
   await fd.close()
-  return `storage://${file.name}`
+  return `storage://${STORAGE_DIRECTORY}/${file.name}`
 }
 
-async function loadMediaFromStorage(name: string) {
+/**
+ * It loads the file from the browser's storage and returns the URL.
+ * @param name - The name of the file to load from storage.
+ * @returns The Object URL of the loaded file.
+ */
+export async function loadMediaFromStorage(name: string) {
+  log(`[FakeStreamManager] loadMediaFromStorage "${name}"`)
   const storageRoot = await navigator.storage.getDirectory()
-  const handle = await storageRoot.getFileHandle(name)
+  const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY)
+  const handle = await storageDir.getFileHandle(name)
   const file = await handle.getFile()
   return URL.createObjectURL(file)
 }
 
-export class FakeStream {
+/**
+ * It deletes the file from the browser's storage.
+ * @param name - The name of the file to delete from storage.
+ * @returns A promise that resolves when the file is deleted.
+ */
+export async function deleteMediaFromStorage(name: string) {
+  log(`[FakeStreamManager] deleteMediaFromStorage:`, name)
+  const storageRoot = await navigator.storage.getDirectory()
+  const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY)
+  await storageDir.removeEntry(name)
+}
+
+/**
+ * It lists all the files in the browser's storage.
+ * @returns The names of the files in the storage.
+ */
+export async function listMediaFiles() {
+  const storageRoot = await navigator.storage.getDirectory()
+  const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY)
+  const names: string[] = []
+  for await (const [name, handle] of storageDir.entries()) {
+    if (handle.kind === 'file') {
+      names.push(`storage://${STORAGE_DIRECTORY}/${name}`)
+    }
+  }
+  return names.sort()
+}
+
+function clampConstraint(value: ConstrainULong, maxValue: number) {
+  if (typeof value === 'number') {
+    return Math.min(value, maxValue)
+  } else {
+    if (typeof value.exact === 'number') {
+      value.exact = Math.min(value.exact, maxValue)
+    }
+    if (typeof value.ideal === 'number') {
+      value.ideal = Math.min(value.ideal, maxValue)
+    }
+    return value
+  }
+}
+
+export type ExtHTMLVideoElement = HTMLVideoElement & { captureStream: () => MediaStream }
+
+export class FakeStreamManager {
+  private readonly videoCanvas: HTMLCanvasElement
+  private readonly width = 1920
+  private readonly height = 1080
+  private readonly frameRate = 30
+  private readonly videoTrack: MediaStreamTrack
+
+  private readonly audioCtx: AudioContext
+  private audioSource?: MediaStreamAudioSourceNode
+  private readonly audioDest: MediaStreamAudioDestinationNode
+  private readonly audioTrack: MediaStreamTrack
+
+  private readonly element: ExtHTMLVideoElement
+  public url: string | null = null
+  private stream: MediaStream | null = null
+  private pauseTimeout: NodeJS.Timeout | null = null
   private refcount = 0
-  private readonly url: string
-  private readonly element: HTMLVideoElement | HTMLAudioElement
-  private readonly streamPromise: Promise<MediaStream>
 
-  constructor(url: string, elementType = 'video') {
-    log(`[FakeStream] new ${url}`)
-    this.url = url
-    this.element = document.createElement(elementType === 'video' ? 'video' : 'audio')
-    this.element.loop = true
-    this.element.crossOrigin = 'anonymous'
-    this.element.autoplay = true
-    this.element.muted = true
-    this.streamPromise = this.createStream()
-  }
+  constructor() {
+    this.videoCanvas = document.createElement('canvas')
+    this.videoCanvas.width = this.width
+    this.videoCanvas.height = this.height
+    const ctx = this.videoCanvas.getContext('2d')!
+    ctx.fillStyle = 'black'
+    ctx.fillRect(0, 0, this.videoCanvas.width, this.videoCanvas.height)
+    this.videoTrack = this.videoCanvas.captureStream(this.frameRate).getVideoTracks()[0]
 
-  private async createStream() {
-    if (this.url.startsWith('storage://')) {
-      this.element.src = await loadMediaFromStorage(this.url.replace('storage://', ''))
-    } else {
-      this.element.src = this.url
-    }
-    return new Promise<MediaStream>((resolve, reject) => {
-      this.element.addEventListener(
-        'loadeddata',
-        () => {
-          log(`[FakeStream] Create stream done`)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          resolve((this.element as any).captureStream() as MediaStream)
-        },
-        { once: true },
-      )
-      this.element.addEventListener(
-        'error',
-        (err) => {
-          log(`[FakeStream] Create stream error:`, err)
-          reject(err)
-        },
-        { once: true },
-      )
-      this.element.play()
+    this.audioCtx = new AudioContext({
+      latencyHint: 'interactive',
+      sampleRate: 48000,
     })
+    this.audioDest = this.audioCtx.createMediaStreamDestination()
+    this.audioTrack = this.audioDest.stream.getAudioTracks()[0]
+
+    this.element = document.createElement('video') as ExtHTMLVideoElement
+    this.element.crossOrigin = 'anonymous'
+    this.element.loop = true
+    this.element.muted = true
   }
 
-  async getTrack(kind: 'audio' | 'video', constraints?: MediaTrackConstraints): Promise<MediaStreamTrack> {
-    const stream = await this.streamPromise
-    const track = stream.getTracks().find((track) => track.kind === kind)
-    if (!track) {
-      throw new Error(`[FakeStream] track ${kind} not found`)
+  /**
+   * It sets the media to the element and plays it.
+   * @param url - The URL of the media to set. If it starts with "storage://", it will load the media from the browser's storage.
+   * @param loop - Whether to loop the media.
+   * @returns A promise that resolves when the media is set.
+   */
+  async setMedia(url: string, loop = true) {
+    if (!url) {
+      return
     }
-    let clonedTrack: MediaStreamTrackExt
+    if (this.url === url) {
+      this.play(loop)
+      return
+    }
+    this.stopMedia()
+    log(`[FakeStreamManager] setMedia "${url}" ${loop ? '(loop)' : ''}`)
+    this.element.src = url.startsWith('storage://')
+      ? await loadMediaFromStorage(url.replace(`storage://${STORAGE_DIRECTORY}/`, ''))
+      : url
+    this.stream = await new Promise<MediaStream>((resolve, reject) => {
+      const onLoad = () => {
+        this.element.removeEventListener('error', onError)
+        resolve(this.element.captureStream())
+      }
+      const onError = (err: unknown) => {
+        log(`[FakeStreamManager] setMedia create stream error:`, err)
+        this.element.removeEventListener('loadeddata', onLoad)
+        this.stopMedia(err)
+        reject(err)
+      }
+      this.element.addEventListener('loadeddata', onLoad, { once: true })
+      this.element.addEventListener('error', onError, { once: true })
+      this.element.play().catch((err) => log('[FakeStreamManager] setMedia play error:', err))
+    })
 
-    if (kind === 'video') {
-      const { readable } = new window.MediaStreamTrackProcessor({ track })
-      clonedTrack = new window.MediaStreamTrackGenerator({ kind: 'video' })
-      const { width, height } = mediaTrackConstraintsToResolution(constraints)
-      clonedTrack._width = width
-      clonedTrack._height = height
-      const transformStream = new window.TransformStream(
+    if (!loop) {
+      this.stopAtEnd()
+    }
+
+    const videoTrack = this.stream.getVideoTracks()[0]
+    if (videoTrack) {
+      const { readable } = new window.MediaStreamTrackProcessor({ track: videoTrack })
+      const { width, height } = this
+      const ctx = this.videoCanvas.getContext('2d')!
+
+      const stop = (err?: unknown) => {
+        log(`[FakeStreamManager] setMedia writableStream stop:`, err)
+        ctx.fillStyle = 'black'
+        ctx.fillRect(0, 0, width, height)
+        this.stopMedia(err)
+      }
+      const writableStream = new window.WritableStream(
         {
-          async transform(videoFrame: VideoFrame, controller) {
+          async write(videoFrame: VideoFrame) {
             let { codedWidth, codedHeight } = videoFrame
             let { x, y } = { x: 0, y: 0 }
-            let { _width, _height } = clonedTrack
-            if (_width === codedWidth && _height === codedHeight) {
-              controller.enqueue(videoFrame)
-              return
+
+            if (width === codedWidth && height === codedHeight) {
+              ctx.drawImage(videoFrame, 0, 0, width, height)
+            } else {
+              const aspectRatio = codedWidth / codedHeight
+              const requestedAspectRatio = width / height
+              if (aspectRatio > requestedAspectRatio) {
+                const w = Math.round(codedHeight * requestedAspectRatio)
+                x = Math.round((codedWidth - w) / 2)
+                codedWidth = w
+              } else if (aspectRatio < requestedAspectRatio) {
+                const h = Math.round(codedWidth / requestedAspectRatio)
+                y = Math.round((codedHeight - h) / 2)
+                codedHeight = h
+              }
+              ctx.drawImage(videoFrame, x, y, codedWidth, codedHeight, 0, 0, width, height)
             }
-            const aspectRatio = codedWidth / codedHeight
-            if (!_height && _width) {
-              _height = Math.round(_width / aspectRatio)
-            } else if (!_width && _height) {
-              _width = Math.round(_height * aspectRatio)
-            } else if (!_width && !_height) {
-              _width = codedWidth
-              _height = codedHeight
-            }
-            if (!_width || !_height) {
-              videoFrame.close()
-              return
-            }
-            const requestedAspectRatio = _width / _height
-            if (aspectRatio > requestedAspectRatio) {
-              const w = Math.round(codedHeight * requestedAspectRatio)
-              x = Math.round((codedWidth - w) / 2)
-              codedWidth = w
-            } else if (aspectRatio < requestedAspectRatio) {
-              const h = Math.round(codedWidth / requestedAspectRatio)
-              y = Math.round((codedHeight - h) / 2)
-              codedHeight = h
-            }
-            const bitmap = await createImageBitmap(videoFrame, x, y, codedWidth, codedHeight, {
-              resizeWidth: _width,
-              resizeHeight: _height,
-              resizeQuality: 'high',
-            })
             videoFrame.close()
-            const newFrame = new VideoFrame(bitmap, { timestamp: videoFrame.timestamp })
-            bitmap.close()
-            controller.enqueue(newFrame)
           },
-          flush(controller) {
-            controller.terminate()
+          close() {
+            stop('close')
+          },
+          abort(err) {
+            stop(err)
           },
         },
         new CountQueuingStrategy({ highWaterMark: 1 }),
       )
       readable
-        .pipeThrough(transformStream)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .pipeTo((clonedTrack as any).writable)
-        .catch((err: unknown) => {
-          log(`[FakeStream] error: ${(err as Error).message}`)
-        })
-    } else {
-      clonedTrack = track.clone()
+        .pipeTo(writableStream)
+        .catch((err: unknown) => log(`[FakeStreamManager] setMedia error: ${(err as Error).message}`))
     }
 
-    const clonedTrackStop = clonedTrack.stop.bind(clonedTrack)
-    clonedTrack.stop = () => {
-      clonedTrackStop()
-      this.decRefcount()
-    }
-    clonedTrack.getSettings = () => {
-      const settings = track.getSettings()
-      return {
-        ...settings,
-        width: clonedTrack._width,
-        height: clonedTrack._height,
+    const audioTrack = this.stream.getAudioTracks()[0]
+    if (audioTrack) {
+      this.audioSource = this.audioCtx.createMediaStreamSource(new MediaStream([audioTrack]))
+      this.audioSource.connect(this.audioDest)
+      if (this.audioCtx.state === 'suspended') {
+        await this.audioCtx.resume()
       }
     }
-    clonedTrack.applyConstraints = async (constraints) => {
-      if (!constraints || kind !== 'video') return
-      const { _width, _height } = clonedTrack
-      const { width, height } = mediaTrackConstraintsToResolution(constraints)
-      if (_width === undefined || _height === undefined || (_width === width && _height === height)) return
-      log(`[FakeStream] id: ${clonedTrack.id} applyConstraints: ${width}x${height}`)
-      clonedTrack._width = width
-      clonedTrack._height = height
+
+    this.url = url
+  }
+
+  stopMedia(event?: unknown) {
+    if (!this.url) {
+      return
     }
-    this.incRefcount()
-    const trackSettings = clonedTrack.getSettings()
-    log(
-      `[FakeStream] getTrack ${kind}: ${clonedTrack.id} count: ${this.refcount} trackSettings: ${JSON.stringify(trackSettings)}`,
-    )
-    return clonedTrack
+    log('[FakeStreamManager] stopMedia', { url: this.url, event })
+    this.url = null
+    if (this.pauseTimeout) {
+      clearTimeout(this.pauseTimeout)
+      this.pauseTimeout = null
+    }
+    const src = this.element.src
+    this.element.pause()
+    this.element.src = ''
+    URL.revokeObjectURL(src)
+    if (this.stream) {
+      this.stream.getTracks().forEach((track) => track.stop())
+      this.stream = null
+    }
+    if (this.audioSource) {
+      this.audioSource.disconnect(this.audioDest)
+      this.audioSource = undefined
+    }
+  }
+
+  private stopAtEnd() {
+    if (this.pauseTimeout) {
+      clearTimeout(this.pauseTimeout)
+      this.pauseTimeout = null
+    }
+    this.pauseTimeout = setTimeout(() => this.pause(), this.element.duration * 1000)
+  }
+
+  play(loop = false) {
+    if (!this.url) {
+      return
+    }
+    log(`[FakeStreamManager] play ${loop ? '(loop)' : ''}`)
+    this.element.currentTime = 0
+    this.element.play().catch((err) => log('[FakeStreamManager] play error:', err))
+    if (!loop) {
+      this.stopAtEnd()
+    }
+  }
+
+  pause() {
+    if (!this.url) {
+      return
+    }
+    log('[FakeStreamManager] pause')
+    if (this.pauseTimeout) {
+      clearTimeout(this.pauseTimeout)
+      this.pauseTimeout = null
+    }
+    this.element.pause()
   }
 
   sync(currentTime?: number) {
+    if (!this.url) {
+      return
+    }
     if (currentTime !== undefined) {
       this.element.currentTime = currentTime
     }
     this.element.play()
   }
 
+  get currentTime() {
+    return this.element.currentTime
+  }
+
+  get paused() {
+    return this.element.paused
+  }
+
   private incRefcount() {
     this.refcount++
     if (this.element.paused) {
-      this.element.play()
+      this.element.play().catch((err) => log('[FakeStreamManager] incRefcount play error:', err))
     }
   }
 
@@ -231,4 +327,65 @@ export class FakeStream {
       this.element.pause()
     }
   }
+
+  async getTrack(kind: 'video' | 'audio', constraints?: MediaTrackConstraints) {
+    log(
+      `[FakeStreamManager] getTrack ${kind} refcount: ${this.refcount}, constraints: ${JSON.stringify(constraints ?? {})}`,
+    )
+    const track = kind === 'video' ? this.videoTrack.clone() : this.audioTrack.clone()
+    const trackStop = track.stop.bind(track)
+    let stopped = false
+    track.stop = () => {
+      if (stopped) {
+        return
+      }
+      stopped = true
+      log('[FakeStreamManager] getTrack stop')
+      trackStop()
+      this.decRefcount()
+    }
+    this.incRefcount()
+    if (constraints) {
+      delete constraints.deviceId
+      if (constraints.width) {
+        constraints.width = clampConstraint(constraints.width, this.width)
+      }
+      if (constraints.height) {
+        constraints.height = clampConstraint(constraints.height, this.height)
+      }
+      if (constraints.frameRate) {
+        constraints.frameRate = clampConstraint(constraints.frameRate, this.frameRate)
+      }
+      await track.applyConstraints(constraints)
+    }
+    return track
+  }
+}
+
+export const fakeStreamManager = new FakeStreamManager()
+
+export function setMedia(url: string, loop = false) {
+  return fakeStreamManager.setMedia(url, loop)
+}
+
+export async function setMediaFromStorage(indexOrName: number | string, loop = false) {
+  const names = await listMediaFiles()
+  let name: string | undefined
+  if (typeof indexOrName === 'number') {
+    name = names[indexOrName]
+  } else {
+    name = names.find((name) => name.toLowerCase().includes(indexOrName.toLowerCase()))
+  }
+  if (!name) {
+    return
+  }
+  return fakeStreamManager.setMedia(name, loop)
+}
+
+/**
+ * Synchronizes all the created fake tracks.
+ * @param {number | undefined} [currentTime] - If specified, the current time to set.
+ */
+export function syncFakeTracks(currentTime?: number) {
+  fakeStreamManager.sync(currentTime)
 }

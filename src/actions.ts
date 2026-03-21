@@ -5,7 +5,7 @@ import { getIndex, params } from './common'
 import { elapsedTime } from './common'
 import { enabledForSession, log } from './common'
 import { saveTransceiversTracks, setTransceiversTracks, stopSaveTransceiversTracks } from './peer-connection'
-import { syncFakeTracks } from './get-user-media'
+import { syncFakeTracks, setMedia } from './fake-stream'
 
 export type Action = {
   name: string
@@ -28,6 +28,7 @@ const ACTIONS = {
   saveTransceiversTracks,
   stopSaveTransceiversTracks,
   syncFakeTracks,
+  setMedia,
   setTransceiversTracks,
 }
 

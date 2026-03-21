@@ -10,6 +10,21 @@ export type RtcTranformEvent = Event & {
   }
 }
 
+interface MediaStreamTrackProcessor {
+  readable: ReadableStream
+  close: () => void
+}
+
+interface MediaStreamTrackGenerator extends MediaStreamTrack {
+  writable: WritableStream
+  close: () => void
+}
+
+interface BrowserCaptureMediaStreamTrack {
+  getSettings: () => MediaTrackSettings
+  getConstraints: () => MediaTrackConstraints
+}
+
 declare global {
   interface Window {
     webrtcperf?: {
@@ -20,12 +35,9 @@ declare global {
     webrtcperf_keyPress: (key: string) => Promise<void>
     webrtcperf_keypressText: (selector: string, text: string) => Promise<void>
     webrtcperf_startFakeScreenshare: () => Promise<void>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    MediaStreamTrackProcessor: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    MediaStreamTrackGenerator: any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    BrowserCaptureMediaStreamTrack: any
+    MediaStreamTrackProcessor: new ({ track }: { track: MediaStreamTrack }) => MediaStreamTrackProcessor
+    MediaStreamTrackGenerator: new ({ kind }: { kind: 'video' | 'audio' }) => MediaStreamTrackGenerator
+    BrowserCaptureMediaStreamTrack: new () => BrowserCaptureMediaStreamTrack
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     showSaveFilePicker: (options: any) => Promise<any>
     onrtctransform: (event: RtcTranformEvent) => void
@@ -122,6 +134,10 @@ export const params = {
    * into the `videoEndToEndDelayStats` object.
    */
   timestampWatermarkVideo: false as EnableValue,
+  /**
+   * It set, the fake media stream will be used instead of the native getUserMedia.
+   */
+  fakeMediaEnabled: false as EnableValue,
   /**
    * It set, the fake screenshare will be created with the specified parameters.
    */
@@ -453,7 +469,7 @@ export async function getElements(selector: string, timeout = 60000, throwError 
  * @returns {Promise<HTMLElement>} The element that was clicked.
  */
 export async function clickOn(selector: string, timeout = 0, text = '') {
-  let el = null
+  let el
   if (text) {
     el = (await getElements(selector, timeout, false, text))[0]
   } else {

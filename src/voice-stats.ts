@@ -4,15 +4,15 @@ import { MeasuredStats } from './stats'
 /**
  * It detects voice activity on an audio track and calls the callback with the start and stop times.
  * @param track - The track to detect voice activity on.
- * @param lowThreshold - The low threshold to detect voice stop.
- * @param highThreshold - The high threshold to detect voice start.
+ * @param minTalkingDurationMs - The minimum talking duration in milliseconds to detect voice start.
+ * @param minSilentDurationMs - The minimum silent duration in milliseconds to detect voice stop.
  * @param callback - The callback to call with the start and stop times.
  * @returns The cleanup function to stop the detection.
  */
 export function detectVoiceActivity(
   track: MediaStreamTrack,
-  lowThreshold = 0.001,
-  highThreshold = 0.1,
+  minTalkingDurationMs = 40,
+  minSilentDurationMs = 500,
   callback?: (event: 'start' | 'stop', startTime: number, stopTime: number) => void,
 ) {
   if (track.kind !== 'audio' || track.readyState !== 'live') return
@@ -23,13 +23,19 @@ export function detectVoiceActivity(
   const source = audioCtx.createMediaStreamSource(new MediaStream([track]))
   const analyser = audioCtx.createAnalyser()
   analyser.fftSize = 512
+  analyser.smoothingTimeConstant = 0.8
   source.connect(analyser)
 
   const bufferLength = analyser.fftSize
   const dataArray = new Float32Array(bufferLength)
 
+  let duration = 0
   let startTime = 0
   let stopTime = 0
+  let talkingDuration = 0
+  let talkingStartedAt = 0
+  let silentDuration = 0
+  let silentStartedAt = 0
 
   const { readable } = new window.MediaStreamTrackProcessor({ track })
   const controller = new AbortController()
@@ -37,21 +43,51 @@ export function detectVoiceActivity(
     .pipeTo(
       new WritableStream({
         write(audioFrame: AudioData) {
-          if (audioCtx.state === 'running') {
+          duration += audioFrame.duration
+          audioFrame.close()
+          if (audioCtx.state === 'running' && duration >= 20_000) {
             analyser.getFloatTimeDomainData(dataArray)
             const max = Math.max(...dataArray)
             const now = Date.now()
-            if (max > highThreshold && !startTime) {
-              startTime = now
-              callback?.('start', startTime, stopTime)
-              stopTime = 0
-            } else if (max <= lowThreshold && startTime && !stopTime && now - startTime > 100) {
-              stopTime = now
-              callback?.('stop', startTime, stopTime)
-              startTime = 0
+            if (max > 0.1) {
+              silentDuration = 0
+              silentStartedAt = 0
+              if (!startTime) {
+                if (!talkingStartedAt) {
+                  talkingStartedAt = now
+                }
+                talkingDuration += duration
+                if (talkingDuration >= minTalkingDurationMs * 1000) {
+                  startTime = talkingStartedAt
+                  log(`detectVoiceActivity voice started track id: ${track.id} at ${startTime}`)
+                  callback?.('start', startTime, stopTime)
+                  stopTime = 0
+                  talkingDuration = 0
+                  talkingStartedAt = 0
+                }
+              }
+            } else if (max <= 0.001) {
+              talkingDuration = 0
+              talkingStartedAt = 0
+              if (startTime && !stopTime) {
+                if (!silentStartedAt) {
+                  silentStartedAt = now
+                }
+                silentDuration += duration
+                if (silentDuration >= minSilentDurationMs * 1000) {
+                  stopTime = silentStartedAt
+                  log(
+                    `detectVoiceActivity voice stopped track id: ${track.id} at ${stopTime} duration: ${stopTime - startTime}ms`,
+                  )
+                  callback?.('stop', startTime, stopTime)
+                  startTime = 0
+                  silentDuration = 0
+                  silentStartedAt = 0
+                }
+              }
             }
+            duration = 0
           }
-          audioFrame.close()
         },
         close() {
           cleanup('close')
@@ -62,7 +98,7 @@ export function detectVoiceActivity(
       }),
       { signal: controller.signal },
     )
-    .catch((err) => log(`detectVoiceActivity error: ${err.message}`))
+    .catch((err) => err && log(`detectVoiceActivity error: ${err.message}`))
 
   const cleanup = (reason = 'unknown') => {
     if (audioCtx.state !== 'closed') {
@@ -93,37 +129,52 @@ export function collectQuestionAnswerDelay() {
  * The estimation is based on the voice activity detection between the question and answer audio tracks.
  * @param sendTrack - The send track to estimate the answer delay.
  * @param recvTrack - The recv track to estimate the answer delay.
- * @param callback - The callback to call with the send end time and recv start time.
+ * @param callback - The callback called at the end of the question and answer.
  * @returns The cleanup function to stop the estimation.
  */
 export function estimateQuestionAnswerDelay(
   sendTrack: MediaStreamTrack,
   recvTrack: MediaStreamTrack,
-  callback?: (sendEndTime: number, recvStartTime: number) => void,
+  callback?: (question: { startTime: number; endTime: number }, answer: { startTime: number; endTime: number }) => void,
 ) {
   if (sendTrack.kind !== 'audio' || recvTrack.kind !== 'audio') return
 
   log(`estimateQuestionAnswerDelay sendTrack id: ${sendTrack.id} recvTrack id: ${recvTrack.id}`)
 
+  let sendStartTime = 0
   let sendEndTime = 0
   let recvStartTime = 0
+  let recvEndTime = 0
+  let delay = 0
 
-  const cleanupSend = detectVoiceActivity(sendTrack, 0.001, 0.1, (event, _startTime, stopTime) => {
-    if (event === 'stop') {
+  const cleanupSend = detectVoiceActivity(sendTrack, 40, 500, (event, startTime, stopTime) => {
+    if (event === 'start') {
+      sendStartTime = startTime
+      sendEndTime = 0
+    } else if (event === 'stop') {
       sendEndTime = stopTime
     }
   })
-  const cleanupRecv = detectVoiceActivity(recvTrack, 0.001, 0.1, (event, startTime) => {
+  const cleanupRecv = detectVoiceActivity(recvTrack, 40, 500, (event, startTime, stopTime) => {
     if (event === 'start') {
       recvStartTime = startTime
-    }
-    if (sendEndTime && recvStartTime && recvStartTime > sendEndTime) {
-      const delay = (recvStartTime - sendEndTime) / 1000
-      log(`estimateQuestionAnswerDelay delay: ${delay}s`)
-      sendEndTime = 0
-      recvStartTime = 0
-      callback?.(sendEndTime, recvStartTime)
-      questionAnswerDelay.push(Date.now(), delay)
+      if (sendEndTime && sendStartTime && recvStartTime > sendEndTime) {
+        delay = (recvStartTime - sendEndTime) / 1000
+        log(`estimateQuestionAnswerDelay delay: ${delay}s`)
+        questionAnswerDelay.push(Date.now(), delay)
+      }
+    } else if (event === 'stop') {
+      if (sendStartTime && sendEndTime && recvStartTime) {
+        recvEndTime = stopTime
+        const question = { startTime: sendStartTime, endTime: sendEndTime }
+        const answer = { startTime: recvStartTime, endTime: recvEndTime }
+        sendStartTime = 0
+        sendEndTime = 0
+        recvStartTime = 0
+        recvEndTime = 0
+        delay = 0
+        callback?.(question, answer)
+      }
     }
   })
 

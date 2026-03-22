@@ -129,12 +129,16 @@ export function collectQuestionAnswerDelay() {
  * The estimation is based on the voice activity detection between the question and answer audio tracks.
  * @param sendTrack - The send track to estimate the answer delay.
  * @param recvTrack - The recv track to estimate the answer delay.
+ * @param minTalkingDurationMs - The minimum talking duration in milliseconds to detect voice start.
+ * @param minSilentDurationMs - The minimum silent duration in milliseconds to detect voice stop.
  * @param callback - The callback called at the end of the question and answer.
  * @returns The cleanup function to stop the estimation.
  */
 export function estimateQuestionAnswerDelay(
   sendTrack: MediaStreamTrack,
   recvTrack: MediaStreamTrack,
+  minTalkingDurationMs = 40,
+  minSilentDurationMs = 500,
   callback?: (question: { startTime: number; endTime: number }, answer: { startTime: number; endTime: number }) => void,
 ) {
   if (sendTrack.kind !== 'audio' || recvTrack.kind !== 'audio') return
@@ -147,7 +151,7 @@ export function estimateQuestionAnswerDelay(
   let recvEndTime = 0
   let delay = 0
 
-  const cleanupSend = detectVoiceActivity(sendTrack, 40, 500, (event, startTime, stopTime) => {
+  const cleanupSend = detectVoiceActivity(sendTrack, minTalkingDurationMs, 500, (event, startTime, stopTime) => {
     if (event === 'start') {
       sendStartTime = startTime
       sendEndTime = 0
@@ -155,7 +159,7 @@ export function estimateQuestionAnswerDelay(
       sendEndTime = stopTime
     }
   })
-  const cleanupRecv = detectVoiceActivity(recvTrack, 40, 500, (event, startTime, stopTime) => {
+  const cleanupRecv = detectVoiceActivity(recvTrack, 40, minSilentDurationMs, (event, startTime, stopTime) => {
     if (event === 'start') {
       recvStartTime = startTime
       if (sendEndTime && sendStartTime && recvStartTime > sendEndTime) {

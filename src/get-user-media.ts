@@ -137,9 +137,8 @@ function collectMediaTracks(mediaStream: MediaStream, onEnded?: (track: MediaStr
 }
 
 export const getFakeTrack = async (kind: 'audio' | 'video', constraints?: MediaTrackConstraints) => {
-  const configUrl = config.MEDIA_URL || config.VIDEO_URL || config.AUDIO_URL
-  if (configUrl) {
-    await fakeStreamManager.setMedia(configUrl, config.LOOP_MEDIA)
+  if (config.MEDIA_URL) {
+    await fakeStreamManager.setMedia(config.MEDIA_URL, config.LOOP_MEDIA)
   }
   return fakeStreamManager.getTrack(kind, constraints)
 }
@@ -157,7 +156,7 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     }
 
     let mediaStream = new MediaStream()
-    const useFakeMedia = enabledForSession(params.fakeMediaEnabled) || config.MEDIA_URL
+    const useFakeMedia = enabledForSession(params.overrideGetUserMedia) || config.MEDIA_URL
 
     if (constraints?.audio && useFakeMedia) {
       const audioTrack = await getFakeTrack('audio')
@@ -249,7 +248,7 @@ if (navigator.mediaDevices && 'setCaptureHandleConfig' in navigator.mediaDevices
 if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
   const NativeEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
   navigator.mediaDevices.enumerateDevices = async () => {
-    const useFakeMedia = enabledForSession(params.fakeMediaEnabled) || config.MEDIA_URL
+    const useFakeMedia = enabledForSession(params.overrideGetUserMedia) || config.MEDIA_URL
     if (useFakeMedia) {
       const devices = [
         {

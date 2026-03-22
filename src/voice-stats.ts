@@ -43,16 +43,10 @@ export function detectVoiceActivity(
             const now = Date.now()
             if (max > highThreshold && !startTime) {
               startTime = now
-              log(
-                `voice started track id: ${track.id} max: ${max} at ${startTime} ${stopTime ? `silence duration: ${startTime - stopTime}ms` : ''}`,
-              )
               callback?.('start', startTime, stopTime)
               stopTime = 0
             } else if (max <= lowThreshold && startTime && !stopTime && now - startTime > 100) {
               stopTime = now
-              log(
-                `voice stopped track id: ${track.id} max: ${max} at ${stopTime} voice duration: ${stopTime - startTime}ms`,
-              )
               callback?.('stop', startTime, stopTime)
               startTime = 0
             }
@@ -88,7 +82,7 @@ export function detectVoiceActivity(
   return cleanup
 }
 
-const questionAnswerDelay = new MeasuredStats({ ttl: 15 })
+const questionAnswerDelay = new MeasuredStats({ ttl: 30 })
 
 export function collectQuestionAnswerDelay() {
   return questionAnswerDelay.mean()

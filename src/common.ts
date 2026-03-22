@@ -85,14 +85,6 @@ export const config = {
    */
   MEDIA_URL: '',
   /**
-   * The URL of the fake media (video track only).
-   */
-  VIDEO_URL: '',
-  /**
-   * The URL of the fake media (audio track only).
-   */
-  AUDIO_URL: '',
-  /**
    * If set, the fake media will loop.
    */
   LOOP_MEDIA: true,
@@ -139,9 +131,9 @@ export const params = {
    */
   timestampWatermarkVideo: false as EnableValue,
   /**
-   * It set, the fake media stream will be used instead of the native getUserMedia.
+   * It set, the native getUserMedia will be overridden with the fake media stream.
    */
-  fakeMediaEnabled: false as EnableValue,
+  overrideGetUserMedia: false as EnableValue,
   /**
    * It set, the fake screenshare will be created with the specified parameters.
    */

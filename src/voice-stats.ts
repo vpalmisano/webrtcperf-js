@@ -1,4 +1,5 @@
 import { log } from './common'
+import { MeasuredStats } from './stats'
 
 /**
  * It detects voice activity on an audio track and calls the callback with the start and stop times.
@@ -87,6 +88,12 @@ export function detectVoiceActivity(
   return cleanup
 }
 
+const questionAnswerDelay = new MeasuredStats({ ttl: 15 })
+
+export function collectQuestionAnswerDelay() {
+  return questionAnswerDelay.mean()
+}
+
 /**
  * Estimates the question to answer delay.
  * The estimation is based on the voice activity detection between the question and answer audio tracks.
@@ -122,6 +129,7 @@ export function estimateQuestionAnswerDelay(
       sendEndTime = 0
       recvStartTime = 0
       callback?.(sendEndTime, recvStartTime)
+      questionAnswerDelay.push(Date.now(), delay)
     }
   })
 

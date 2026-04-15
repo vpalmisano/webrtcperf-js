@@ -25,6 +25,9 @@ export function detectVoiceActivity(
   analyser.fftSize = 512
   analyser.smoothingTimeConstant = 0.8
   source.connect(analyser)
+  if (audioCtx.state !== 'running') {
+    audioCtx.resume().catch((err) => log('[detectVoiceActivity] audioCtx resume error:', err))
+  }
 
   const bufferLength = analyser.fftSize
   const dataArray = new Float32Array(bufferLength)
@@ -43,7 +46,8 @@ export function detectVoiceActivity(
     .pipeTo(
       new WritableStream({
         write(audioFrame: AudioData) {
-          duration += audioFrame.duration
+          const { numberOfFrames, sampleRate } = audioFrame
+          duration += (numberOfFrames / sampleRate) * 1_000_000
           audioFrame.close()
           if (audioCtx.state === 'running' && duration >= 20_000) {
             analyser.getFloatTimeDomainData(dataArray)

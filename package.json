@@ -13,8 +13,9 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "version": "1.2.5",
+  "version": "1.2.6",
   "main": "dist/webrtcperf.js",
+  "types": "dist/lib/index.d.ts",
   "files": [
     "dist"
   ],
@@ -44,9 +45,9 @@
     "webpack-cli": "^7.0.2"
   },
   "scripts": {
-    "prepare": "yarn lint && webpack",
+    "prepare": "yarn lint && webpack && tsc -b",
     "prepublishOnly": "yarn lint",
-    "build": "webpack",
+    "build": "webpack && tsc -b",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write 'src/**/*.{ts,tsx,js,jsx,json,css,md}'",

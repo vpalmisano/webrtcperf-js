@@ -6,7 +6,9 @@
       "esModuleInterop": true,
       "skipLibCheck": true,
       "forceConsistentCasingInFileNames": true,
-      "outDir": "./dist"
+      "outDir": "./dist/lib",
+      "declaration": true,
+      "declarationMap": false
     },
     "include": ["src"],
     "typedocOptions": {

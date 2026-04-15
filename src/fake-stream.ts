@@ -132,6 +132,9 @@ export class FakeStreamManager {
     })
     this.audioDest = this.audioCtx.createMediaStreamDestination()
     this.audioTrack = this.audioDest.stream.getAudioTracks()[0]
+    if (this.audioCtx.state !== 'running') {
+      this.audioCtx.resume().catch((err) => log('[FakeStreamManager] audioCtx resume error:', err))
+    }
 
     this.element = document.createElement('video') as ExtHTMLVideoElement
     this.element.crossOrigin = 'anonymous'

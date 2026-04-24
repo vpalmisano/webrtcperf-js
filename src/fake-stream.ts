@@ -1,44 +1,44 @@
-import { log } from './common'
+import { log, sleep } from './common'
 
 export async function openMediaPicker() {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = 'video/*,audio/*'
-  const file = await new Promise<File | undefined>((resolve) => {
+  input.multiple = true
+  const files = await new Promise<File[]>((resolve) => {
     input.onchange = () => {
-      const files = input.files
-      if (files && files.length > 0) {
-        resolve(files[0])
-      } else {
-        resolve(undefined)
-      }
+      resolve(input.files ? Array.from(input.files) : [])
     }
     input.click()
   })
-  return file
+  return files
 }
 
 const STORAGE_DIRECTORY = 'webrtcperf'
 
 /**
- * It saves the file to the browser's storage and returns the storage:// URL of the saved file.
- * @param file - The file to save to storage. If not provided, it will open a file picker to select a file.
- * @returns The storage:// URL of the saved file.
+ * It saves the files to the browser's storage and returns the storage:// URLs of the saved files.
+ * @param files - The files to save to storage. If not provided, it will open a file picker to select files.
+ * @returns The storage:// URLs of the saved files.
  */
-export async function saveMediaToStorage(file?: File) {
-  if (!file) {
-    file = await openMediaPicker()
+export async function saveMediaToStorage(...files: File[]) {
+  if (files.length === 0) {
+    files = await openMediaPicker()
   }
-  if (!file) return
-  log(`[FakeStreamManager] saveMediaToStorage "${file.name}"`)
+  if (files.length === 0) return []
   const storageRoot = await navigator.storage.getDirectory()
   const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY, { create: true })
-  const handle = await storageDir.getFileHandle(file.name, { create: true })
-  const fd = await handle.createWritable()
-  const blob = new Blob([file], { type: file.type })
-  await fd.write(blob)
-  await fd.close()
-  return `storage://${STORAGE_DIRECTORY}/${file.name}`
+  const urls: string[] = []
+  for (const file of files) {
+    log(`[FakeStreamManager] saveMediaToStorage "${file.name}"`)
+    const handle = await storageDir.getFileHandle(file.name, { create: true })
+    const fd = await handle.createWritable()
+    const blob = new Blob([file], { type: file.type })
+    await fd.write(blob)
+    await fd.close()
+    urls.push(`storage://${STORAGE_DIRECTORY}/${file.name}`)
+  }
+  return urls
 }
 
 /**
@@ -313,6 +313,10 @@ export class FakeStreamManager {
     return this.element.currentTime
   }
 
+  get duration() {
+    return this.element.duration
+  }
+
   get paused() {
     return this.element.paused
   }
@@ -367,10 +371,30 @@ export class FakeStreamManager {
 
 export const fakeStreamManager = new FakeStreamManager()
 
+/**
+ * It sets the media to the fake stream manager and plays it.
+ * @param url - The URL of the media to set. If it starts with "storage://", it will load the media from the browser's storage.
+ * @param loop - Whether to loop the media.
+ * @returns A promise that resolves when the media is set.
+ */
 export function setMedia(url: string, loop = false) {
   return fakeStreamManager.setMedia(url, loop)
 }
 
+/**
+ * It stops the media from the fake stream manager.
+ * @returns A promise that resolves when the media is stopped.
+ */
+export function stopMedia() {
+  return fakeStreamManager.stopMedia('stopMedia')
+}
+
+/**
+ * It sets the media to the fake stream manager and plays it from the browser's storage.
+ * @param indexOrName - The index or name (or part of the name) of the media to set.
+ * @param loop - Whether to loop the media.
+ * @returns A promise that resolves when the media is set.
+ */
 export async function setMediaFromStorage(indexOrName: number | string, loop = false) {
   const names = await listMediaFiles()
   let name: string | undefined
@@ -383,6 +407,22 @@ export async function setMediaFromStorage(indexOrName: number | string, loop = f
     return
   }
   return fakeStreamManager.setMedia(name, loop)
+}
+
+/**
+ * It sets the media playlist to the fake stream manager and plays it from the browser's storage.
+ * @param indexOrNames - The indexes or names (or parts of the names) of the media to set.
+ * @param waitTime - The time to wait before playing the next media (seconds).
+ * @returns A promise that resolves when the media playlist is set.
+ */
+export async function setMediaPlaylistFromStorage(indexOrNames: (number | string)[], waitTime = 0) {
+  log(`[FakeStreamManager] setMediaPlaylistFromStorage:`, indexOrNames, waitTime)
+  for (const indexOrName of indexOrNames) {
+    await setMediaFromStorage(indexOrName)
+    const waitTimeMs = (waitTime + fakeStreamManager.duration) * 1000
+    await sleep(waitTimeMs)
+    fakeStreamManager.stopMedia()
+  }
 }
 
 /**

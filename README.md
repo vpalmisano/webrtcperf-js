@@ -45,8 +45,8 @@ Reload the page and start using the getUserMedia API.
 You can store the media file in the page local storage and make the configuration persistent:
 
 ```js
-url = await webrtcperf.saveMediaToStorage()
-localStorage.setItem('webrtcperf.config', JSON.stringify({ MEDIA_URL: url }))
+urls = await webrtcperf.saveMediaToStorage()
+localStorage.setItem('webrtcperf.config', JSON.stringify({ MEDIA_URL: urls[0] }))
 
 // or change the value on-fly:
 await webrtcperf.setMedia(url, true)

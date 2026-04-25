@@ -199,6 +199,7 @@ export type QuestionAnswerStats = { file: string; question: number; delay: numbe
  * @param mediaFiles - The media files to use for the test.
  * @param sendTrackIndex - The index of the send track. Use this to get a specific send track from the running transceivers.
  * @param recvTrackIndex - The index of the recv track. Use this to get a specific recv track from the running transceivers.
+ * @param endTestCallback - The callback called when the test ends.
  * @returns The stop function to interrupt the test and the collected stats.
  */
 export async function runQuestionAnswerTest(

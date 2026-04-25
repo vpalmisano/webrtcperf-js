@@ -1,4 +1,6 @@
 import { log } from './common'
+import { setMediaFromStorage } from './fake-stream'
+import { getTransceiversTrack } from './peer-connection'
 import { MeasuredStats } from './stats'
 
 /**
@@ -104,7 +106,7 @@ export function detectVoiceActivity(
     )
     .catch((err) => err && log(`detectVoiceActivity error: ${err.message}`))
 
-  const cleanup = (reason = 'unknown') => {
+  const cleanup = (reason = '') => {
     if (audioCtx.state !== 'closed') {
       log(`detectVoiceActivity track id: ${track.id} cleanup reason: ${reason}`)
       controller.abort(reason)
@@ -159,35 +161,76 @@ export function estimateQuestionAnswerDelay(
     if (event === 'start') {
       sendStartTime = startTime
       sendEndTime = 0
-    } else if (event === 'stop') {
+    } else if (event === 'stop' && sendStartTime) {
       sendEndTime = stopTime
     }
   })
   const cleanupRecv = detectVoiceActivity(recvTrack, 40, minSilentDurationMs, (event, startTime, stopTime) => {
-    if (event === 'start') {
+    if (!sendStartTime || !sendEndTime) return
+    if (event === 'start' && startTime > sendEndTime) {
       recvStartTime = startTime
-      if (sendEndTime && sendStartTime && recvStartTime > sendEndTime) {
-        delay = (recvStartTime - sendEndTime) / 1000
-        log(`estimateQuestionAnswerDelay delay: ${delay}s`)
-        questionAnswerDelay.push(Date.now(), delay)
-      }
-    } else if (event === 'stop') {
-      if (sendStartTime && sendEndTime && recvStartTime) {
-        recvEndTime = stopTime
-        const question = { startTime: sendStartTime, endTime: sendEndTime }
-        const answer = { startTime: recvStartTime, endTime: recvEndTime }
-        sendStartTime = 0
-        sendEndTime = 0
-        recvStartTime = 0
-        recvEndTime = 0
-        delay = 0
-        callback?.(question, answer)
-      }
+      delay = (recvStartTime - sendEndTime) / 1000
+      log(`estimateQuestionAnswerDelay delay: ${delay}s`)
+      questionAnswerDelay.push(Date.now(), delay)
+    } else if (event === 'stop' && recvStartTime) {
+      recvEndTime = stopTime
+      const question = { startTime: sendStartTime, endTime: sendEndTime }
+      const answer = { startTime: recvStartTime, endTime: recvEndTime }
+      sendStartTime = 0
+      sendEndTime = 0
+      recvStartTime = 0
+      recvEndTime = 0
+      delay = 0
+      callback?.(question, answer)
     }
   })
 
   return () => {
+    log(`estimateQuestionAnswerDelay cleanup sendTrack id: ${sendTrack.id} recvTrack id: ${recvTrack.id}`)
     cleanupSend?.()
     cleanupRecv?.()
   }
+}
+
+export type QuestionAnswerStats = { file: string; question: number; delay: number; answer: number }
+
+/**
+ * Run a question answer test getting the send and recv tracks from the running transceivers.
+ * @param mediaFiles - The media files to use for the test.
+ * @param sendTrackIndex - The index of the send track. Use this to get a specific send track from the running transceivers.
+ * @param recvTrackIndex - The index of the recv track. Use this to get a specific recv track from the running transceivers.
+ * @returns The stop function to interrupt the test and the collected stats.
+ */
+export async function runQuestionAnswerTest(
+  mediaFiles: string[],
+  sendTrackIndex = 0,
+  recvTrackIndex = 0,
+  endTestCallback?: (stats: QuestionAnswerStats[]) => void,
+) {
+  log(
+    `runQuestionAnswerTest mediaFiles: ${mediaFiles.length} sendTrackIndex: ${sendTrackIndex} recvTrackIndex: ${recvTrackIndex}`,
+  )
+  const files = mediaFiles.slice()
+  const stats: QuestionAnswerStats[] = []
+  const sendTrack = await getTransceiversTrack('send', 'audio', sendTrackIndex)
+  const recvTrack = await getTransceiversTrack('recv', 'audio', recvTrackIndex)
+  let currentFile = files.splice(0, 1)[0]
+  const stop = estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 1000, async (send, recv) => {
+    const question = send.endTime - send.startTime
+    const delay = recv.startTime - send.endTime
+    const answer = recv.endTime - recv.startTime
+    log(
+      `runQuestionAnswerTest file: ${currentFile} question: ${question / 1000}s delay: ${delay / 1000}s answer: ${answer / 1000}s`,
+    )
+    stats.push({ file: currentFile, question, delay, answer })
+    if (files.length) {
+      currentFile = files.splice(0, 1)[0]
+      await setMediaFromStorage(currentFile)
+    } else {
+      stop?.()
+      endTestCallback?.(stats)
+    }
+  })
+  await setMediaFromStorage(currentFile)
+  return { stop, stats }
 }

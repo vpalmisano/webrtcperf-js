@@ -1,6 +1,6 @@
 import * as sdpTransform from 'sdp-transform'
 
-import { config, elapsedTime, enabledForSession, log, overrides, params } from './common'
+import { config, elapsedTime, enabledForSession, log, overrides, params, sleep } from './common'
 import { OnOffTimer } from './timers'
 import { MeasuredStats } from './stats'
 import { audioStartFrameDelayStats, recognizeAudioTimestampWatermark } from './e2e-audio-stats'
@@ -449,6 +449,36 @@ export function filterTransceiversTracks(direction: 'send' | 'recv', kind: 'audi
     })
   }
   return tranceivers
+}
+
+/**
+ * Get the transceiver track by index, waiting for the track to be available.
+ * @param direction - The direction of the transceiver.
+ * @param kind - The kind of the track.
+ * @param index - The index of the track.
+ * @param retryTime - The time to retry in seconds.
+ * @param timeout - The timeout in seconds. Set to 0 to wait indefinitely.
+ * @returns The track.
+ */
+export async function getTransceiversTrack(
+  direction: 'send' | 'recv',
+  kind: 'audio' | 'video' | 'screen',
+  index = 0,
+  retryTime = 1,
+  timeout = 0,
+) {
+  const startTime = Date.now()
+  while (true) {
+    const ret = filterTransceiversTracks(direction, kind)
+    const track = ret[index]?.track
+    if (track) {
+      return track
+    }
+    if (timeout > 0 && Date.now() - startTime > timeout * 1000) {
+      throw new Error(`Timeout getting track ${index} ${direction} ${kind}`)
+    }
+    await sleep(retryTime * 1000)
+  }
 }
 
 export async function saveTransceiversTracks(

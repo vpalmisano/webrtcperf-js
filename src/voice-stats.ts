@@ -1,5 +1,5 @@
 import { log } from './common'
-import { setMediaFromStorage } from './fake-stream'
+import { setMedia, setMediaFromStorage } from './fake-stream'
 import { getTransceiversTrack } from './peer-connection'
 import { MeasuredStats } from './stats'
 
@@ -196,7 +196,7 @@ export type QuestionAnswerStats = { file: string; question: number; delay: numbe
 
 /**
  * Run a question answer test getting the send and recv tracks from the running transceivers.
- * @param mediaFiles - The media files to use for the test.
+ * @param mediaFiles - The media files to use for the test. It can be an array of URLs or an array of storage names or parts of the names.
  * @param sendTrackIndex - The index of the send track. Use this to get a specific send track from the running transceivers.
  * @param recvTrackIndex - The index of the recv track. Use this to get a specific recv track from the running transceivers.
  * @param endTestCallback - The callback called when the test ends.
@@ -216,6 +216,15 @@ export async function runQuestionAnswerTest(
   const sendTrack = await getTransceiversTrack('send', 'audio', sendTrackIndex)
   const recvTrack = await getTransceiversTrack('recv', 'audio', recvTrackIndex)
   let currentFile = files.splice(0, 1)[0]
+
+  const setCurrentFile = async () => {
+    if (currentFile.startsWith('http://') || currentFile.startsWith('https://')) {
+      await setMedia(currentFile)
+    } else {
+      await setMediaFromStorage(currentFile)
+    }
+  }
+
   const stop = estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 1000, async (send, recv) => {
     const question = send.endTime - send.startTime
     const delay = recv.startTime - send.endTime
@@ -226,12 +235,12 @@ export async function runQuestionAnswerTest(
     stats.push({ file: currentFile, question, delay, answer })
     if (files.length) {
       currentFile = files.splice(0, 1)[0]
-      await setMediaFromStorage(currentFile)
+      await setCurrentFile()
     } else {
       stop?.()
       endTestCallback?.(stats)
     }
   })
-  await setMediaFromStorage(currentFile)
+  await setCurrentFile()
   return { stop, stats }
 }

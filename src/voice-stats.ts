@@ -221,7 +221,7 @@ export async function runQuestionAnswerTest(
   endTestCallback?: (stats: QuestionAnswerStats[]) => void,
 ) {
   log(
-    `runQuestionAnswerTest mediaFiles: ${mediaFiles.length} sendTrackIndex: ${sendTrackIndex} recvTrackIndex: ${recvTrackIndex}`,
+    `runQuestionAnswerTest mediaFiles: ${mediaFiles.length} sendTrackIndex: ${sendTrackIndex} recvTrackIndex: ${recvTrackIndex} interruptAnswerAfter: ${interruptAnswerAfter}`,
   )
   const files = mediaFiles.slice()
   const stats: QuestionAnswerStats[] = []

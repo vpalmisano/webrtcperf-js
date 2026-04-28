@@ -84,7 +84,7 @@ export async function setupActions() {
         const now = elapsedTime()
         const ts = (now / 1000).toFixed(0)
         log(
-          `run action [${ts}s] ${name}(${params || ''})${every ? ` every ${every}s` : ''}${
+          `run action [${ts}s] ${name}(${JSON.stringify(params) || ''})${every ? ` every ${every}s` : ''}${
             times ? ` (${times - currentIteration}/${times} times remaining)` : ''
           } (system time: ${Date.now()})`,
         )

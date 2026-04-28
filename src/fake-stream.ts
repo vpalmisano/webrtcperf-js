@@ -21,7 +21,7 @@ const STORAGE_DIRECTORY = 'webrtcperf'
  * @param files - The files to save to storage. If not provided, it will open a file picker to select files.
  * @returns The storage:// URLs of the saved files.
  */
-export async function saveMediaToStorage(...files: File[]) {
+export async function saveMediaToStorage(...files: (File | string)[]) {
   if (files.length === 0) {
     files = await openMediaPicker()
   }
@@ -30,13 +30,31 @@ export async function saveMediaToStorage(...files: File[]) {
   const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY, { create: true })
   const urls: string[] = []
   for (const file of files) {
-    log(`[FakeStreamManager] saveMediaToStorage "${file.name}"`)
-    const handle = await storageDir.getFileHandle(file.name, { create: true })
+    let name: string
+    let type: string
+    if (file instanceof File) {
+      name = file.name
+      type = file.type
+    } else {
+      name = (file as string).split('/').pop()!
+      type = ''
+    }
+    log(`[FakeStreamManager] saveMediaToStorage "${name}"`)
+    const handle = await storageDir.getFileHandle(name, { create: true })
     const fd = await handle.createWritable()
-    const blob = new Blob([file], { type: file.type })
-    await fd.write(blob)
+    if (file instanceof File) {
+      const blob = new Blob([file], { type })
+      await fd.write(blob)
+    } else {
+      const res = await fetch(new URL(file as string), {
+        referrerPolicy: 'no-referrer',
+        credentials: 'omit',
+      })
+      const blob = await res.blob()
+      await fd.write(blob)
+    }
     await fd.close()
-    urls.push(`storage://${STORAGE_DIRECTORY}/${file.name}`)
+    urls.push(`storage://${STORAGE_DIRECTORY}/${name}`)
   }
   return urls
 }

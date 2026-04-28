@@ -18,7 +18,6 @@ export function detectVoiceActivity(
   callback?: (event: 'start' | 'stop', startTime: number, stopTime: number) => void,
 ) {
   if (track.kind !== 'audio' || track.readyState !== 'live') return
-  log(`detectVoiceActivity track id: ${track.id}`)
   const audioCtx = new AudioContext({
     sampleRate: 48000,
   })
@@ -65,7 +64,6 @@ export function detectVoiceActivity(
                 talkingDuration += duration
                 if (talkingDuration >= minTalkingDurationMs * 1000) {
                   startTime = talkingStartedAt
-                  log(`detectVoiceActivity voice started track id: ${track.id} at ${startTime}`)
                   callback?.('start', startTime, stopTime)
                   stopTime = 0
                   talkingDuration = 0
@@ -82,9 +80,6 @@ export function detectVoiceActivity(
                 silentDuration += duration
                 if (silentDuration >= minSilentDurationMs * 1000) {
                   stopTime = silentStartedAt
-                  log(
-                    `detectVoiceActivity voice stopped track id: ${track.id} at ${stopTime} duration: ${stopTime - startTime}ms`,
-                  )
                   callback?.('stop', startTime, stopTime)
                   startTime = 0
                   silentDuration = 0
@@ -108,7 +103,6 @@ export function detectVoiceActivity(
 
   const cleanup = (reason = '') => {
     if (audioCtx.state !== 'closed') {
-      log(`detectVoiceActivity track id: ${track.id} cleanup reason: ${reason}`)
       controller.abort(reason)
       source.disconnect()
       audioCtx.close()
@@ -130,6 +124,14 @@ export function collectQuestionAnswerDelay() {
   return questionAnswerDelay.mean()
 }
 
+export type QuestionAnswerTurn = {
+  questionStartTime: number
+  questionEndTime: number
+  answerStartTime: number
+  answerEndTime: number
+  phase: 'question-start' | 'question-end' | 'answer-start' | 'answer-end' | 'answer-interrupted'
+}
+
 /**
  * Estimates the question to answer delay.
  * The estimation is based on the voice activity detection between the question and answer audio tracks.
@@ -145,43 +147,46 @@ export function estimateQuestionAnswerDelay(
   recvTrack: MediaStreamTrack,
   minTalkingDurationMs = 40,
   minSilentDurationMs = 500,
-  callback?: (question: { startTime: number; endTime: number }, answer: { startTime: number; endTime: number }) => void,
+  callback?: (turn: QuestionAnswerTurn) => void,
 ) {
   if (sendTrack.kind !== 'audio' || recvTrack.kind !== 'audio') return
 
   log(`estimateQuestionAnswerDelay sendTrack id: ${sendTrack.id} recvTrack id: ${recvTrack.id}`)
 
-  let sendStartTime = 0
-  let sendEndTime = 0
-  let recvStartTime = 0
-  let recvEndTime = 0
-  let delay = 0
+  let currentTurn: QuestionAnswerTurn | undefined = undefined
 
   const cleanupSend = detectVoiceActivity(sendTrack, minTalkingDurationMs, 500, (event, startTime, stopTime) => {
     if (event === 'start') {
-      sendStartTime = startTime
-      sendEndTime = 0
-    } else if (event === 'stop' && sendStartTime) {
-      sendEndTime = stopTime
+      if (currentTurn?.phase === 'answer-start') {
+        currentTurn.phase = 'answer-interrupted'
+        callback?.(currentTurn)
+      }
+      currentTurn = {
+        questionStartTime: startTime,
+        questionEndTime: 0,
+        answerStartTime: 0,
+        answerEndTime: 0,
+        phase: 'question-start',
+      }
+      callback?.(currentTurn)
+    } else if (event === 'stop' && currentTurn?.phase === 'question-start') {
+      currentTurn.questionEndTime = stopTime
+      currentTurn.phase = 'question-end'
+      callback?.(currentTurn)
     }
   })
   const cleanupRecv = detectVoiceActivity(recvTrack, 40, minSilentDurationMs, (event, startTime, stopTime) => {
-    if (!sendStartTime || !sendEndTime) return
-    if (event === 'start' && startTime > sendEndTime) {
-      recvStartTime = startTime
-      delay = (recvStartTime - sendEndTime) / 1000
+    if (event === 'start' && currentTurn?.phase === 'question-end' && startTime > currentTurn.questionEndTime) {
+      currentTurn.answerStartTime = startTime
+      currentTurn.phase = 'answer-start'
+      const delay = (currentTurn.answerStartTime - currentTurn.questionEndTime) / 1000
       log(`estimateQuestionAnswerDelay delay: ${delay}s`)
       questionAnswerDelay.push(Date.now(), delay)
-    } else if (event === 'stop' && recvStartTime) {
-      recvEndTime = stopTime
-      const question = { startTime: sendStartTime, endTime: sendEndTime }
-      const answer = { startTime: recvStartTime, endTime: recvEndTime }
-      sendStartTime = 0
-      sendEndTime = 0
-      recvStartTime = 0
-      recvEndTime = 0
-      delay = 0
-      callback?.(question, answer)
+      callback?.(currentTurn)
+    } else if (event === 'stop' && currentTurn?.phase === 'answer-start') {
+      currentTurn.answerEndTime = stopTime
+      currentTurn.phase = 'answer-end'
+      callback?.(currentTurn)
     }
   })
 
@@ -192,7 +197,13 @@ export function estimateQuestionAnswerDelay(
   }
 }
 
-export type QuestionAnswerStats = { file: string; question: number; delay: number; answer: number }
+export type QuestionAnswerStats = {
+  file: string
+  question?: number
+  delay?: number
+  answer?: number
+  interrupted?: boolean
+}
 
 /**
  * Run a question answer test getting the send and recv tracks from the running transceivers.
@@ -206,6 +217,7 @@ export async function runQuestionAnswerTest(
   mediaFiles: string[],
   sendTrackIndex = 0,
   recvTrackIndex = 0,
+  interruptAnswerAfter = 0,
   endTestCallback?: (stats: QuestionAnswerStats[]) => void,
 ) {
   log(
@@ -215,32 +227,43 @@ export async function runQuestionAnswerTest(
   const stats: QuestionAnswerStats[] = []
   const sendTrack = await getTransceiversTrack('send', 'audio', sendTrackIndex)
   const recvTrack = await getTransceiversTrack('recv', 'audio', recvTrackIndex)
-  let currentFile = files.splice(0, 1)[0]
+  let currentFile = ''
+  let previousFile = ''
 
-  const setCurrentFile = async () => {
-    if (currentFile.startsWith('http://') || currentFile.startsWith('https://')) {
-      await setMedia(currentFile)
-    } else {
-      await setMediaFromStorage(currentFile)
-    }
-  }
-
-  const stop = estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 1000, async (send, recv) => {
-    const question = send.endTime - send.startTime
-    const delay = recv.startTime - send.endTime
-    const answer = recv.endTime - recv.startTime
-    log(
-      `runQuestionAnswerTest file: ${currentFile} question: ${question / 1000}s delay: ${delay / 1000}s answer: ${answer / 1000}s`,
-    )
-    stats.push({ file: currentFile, question, delay, answer })
+  const nextFile = async () => {
     if (files.length) {
+      previousFile = currentFile
       currentFile = files.splice(0, 1)[0]
-      await setCurrentFile()
+      if (currentFile.startsWith('http://') || currentFile.startsWith('https://')) {
+        await setMedia(currentFile)
+      } else {
+        await setMediaFromStorage(currentFile)
+      }
     } else {
       stop?.()
       endTestCallback?.(stats)
     }
+  }
+
+  const stop = estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 1000, async (turn) => {
+    log(`runQuestionAnswerTest turn "${currentFile}" phase: ${turn.phase}`)
+    if (turn.phase === 'answer-start' && interruptAnswerAfter > 0) {
+      setTimeout(() => nextFile(), interruptAnswerAfter * 1000)
+    } else if (turn.phase === 'answer-end') {
+      const question = turn.questionEndTime - turn.questionStartTime
+      const delay = turn.answerStartTime - turn.questionEndTime
+      const answer = turn.answerEndTime - turn.answerStartTime
+      log(
+        `runQuestionAnswerTest file: ${currentFile} question: ${question / 1000}s delay: ${delay / 1000}s answer: ${answer / 1000}s`,
+      )
+      stats.push({ file: currentFile, question, delay, answer })
+      await nextFile()
+    } else if (turn.phase === 'answer-interrupted') {
+      const question = turn.questionEndTime - turn.questionStartTime
+      const delay = turn.answerStartTime - turn.questionEndTime
+      stats.push({ file: previousFile, question, delay, interrupted: true })
+    }
   })
-  await setCurrentFile()
+  await nextFile()
   return { stop, stats }
 }

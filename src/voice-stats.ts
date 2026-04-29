@@ -1,5 +1,5 @@
 import { log } from './common'
-import { setMedia, setMediaFromStorage } from './fake-stream'
+import { fakeStreamManager, setMedia, setMediaFromStorage } from './fake-stream'
 import { getTransceiversTrack } from './peer-connection'
 import { MeasuredStats } from './stats'
 
@@ -125,11 +125,14 @@ export function collectQuestionAnswerDelay() {
 }
 
 export type QuestionAnswerTurn = {
+  mediaFile: string
   questionStartTime: number
   questionEndTime: number
   answerStartTime: number
   answerEndTime: number
   phase: 'question-start' | 'question-end' | 'answer-start' | 'answer-end' | 'answer-interrupted'
+  answerInterruptedAt?: number
+  answerTalkingAfterInterruption?: number
 }
 
 /**
@@ -154,14 +157,17 @@ export function estimateQuestionAnswerDelay(
   log(`estimateQuestionAnswerDelay sendTrack id: ${sendTrack.id} recvTrack id: ${recvTrack.id}`)
 
   let currentTurn: QuestionAnswerTurn | undefined = undefined
+  let previousTurn: QuestionAnswerTurn | undefined = undefined
 
   const cleanupSend = detectVoiceActivity(sendTrack, minTalkingDurationMs, 500, (event, startTime, stopTime) => {
     if (event === 'start') {
       if (currentTurn?.phase === 'answer-start') {
         currentTurn.phase = 'answer-interrupted'
-        callback?.(currentTurn)
+        currentTurn.answerInterruptedAt = Date.now()
       }
+      previousTurn = currentTurn
       currentTurn = {
+        mediaFile: (fakeStreamManager.url ?? '').split('/').pop() ?? '',
         questionStartTime: startTime,
         questionEndTime: 0,
         answerStartTime: 0,
@@ -183,10 +189,18 @@ export function estimateQuestionAnswerDelay(
       log(`estimateQuestionAnswerDelay delay: ${delay}s`)
       questionAnswerDelay.push(Date.now(), delay)
       callback?.(currentTurn)
-    } else if (event === 'stop' && currentTurn?.phase === 'answer-start') {
-      currentTurn.answerEndTime = stopTime
-      currentTurn.phase = 'answer-end'
-      callback?.(currentTurn)
+    } else if (event === 'stop') {
+      if (previousTurn?.phase === 'answer-interrupted') {
+        previousTurn.answerEndTime = stopTime
+        previousTurn.answerTalkingAfterInterruption = Date.now() - previousTurn.answerInterruptedAt!
+        callback?.(previousTurn)
+        previousTurn = undefined
+      }
+      if (currentTurn?.phase === 'answer-start') {
+        currentTurn.answerEndTime = stopTime
+        currentTurn.phase = 'answer-end'
+        callback?.(currentTurn)
+      }
     }
   })
 
@@ -202,7 +216,7 @@ export type QuestionAnswerStats = {
   question?: number
   delay?: number
   answer?: number
-  interrupted?: boolean
+  answerAfterInterruption?: number
 }
 
 /**
@@ -228,11 +242,14 @@ export async function runQuestionAnswerTest(
   const sendTrack = await getTransceiversTrack('send', 'audio', sendTrackIndex)
   const recvTrack = await getTransceiversTrack('recv', 'audio', recvTrackIndex)
   let currentFile = ''
-  let previousFile = ''
+  let nextFileTimeout: NodeJS.Timeout | undefined = undefined
+
+  fakeStreamManager.stopMedia()
+  fakeStreamManager.muted = false
+  fakeStreamManager.volume = 0.25
 
   const nextFile = async () => {
     if (files.length) {
-      previousFile = currentFile
       currentFile = files.splice(0, 1)[0]
       if (currentFile.startsWith('http://') || currentFile.startsWith('https://')) {
         await setMedia(currentFile)
@@ -242,26 +259,37 @@ export async function runQuestionAnswerTest(
     } else {
       stop?.()
       endTestCallback?.(stats)
+      fakeStreamManager.stopMedia()
+      fakeStreamManager.muted = true
+      fakeStreamManager.volume = 1.0
+      log('runQuestionAnswerTest ended', stats)
     }
   }
 
   const stop = estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 1000, async (turn) => {
-    log(`runQuestionAnswerTest turn "${currentFile}" phase: ${turn.phase}`)
-    if (turn.phase === 'answer-start' && interruptAnswerAfter > 0) {
-      setTimeout(() => nextFile(), interruptAnswerAfter * 1000)
-    } else if (turn.phase === 'answer-end') {
+    const file = turn.mediaFile
+    log(`runQuestionAnswerTest "${file}" turn phase: ${turn.phase}`)
+    if (turn.phase === 'answer-start' && interruptAnswerAfter > 0 && files.length) {
+      if (nextFileTimeout) {
+        clearTimeout(nextFileTimeout)
+      }
+      nextFileTimeout = setTimeout(() => nextFile(), interruptAnswerAfter * 1000)
+    } else if (['answer-end', 'answer-interrupted'].includes(turn.phase)) {
       const question = turn.questionEndTime - turn.questionStartTime
       const delay = turn.answerStartTime - turn.questionEndTime
       const answer = turn.answerEndTime - turn.answerStartTime
+      const answerAfterInterruption = turn.answerTalkingAfterInterruption
       log(
-        `runQuestionAnswerTest file: ${currentFile} question: ${question / 1000}s delay: ${delay / 1000}s answer: ${answer / 1000}s`,
+        `runQuestionAnswerTest "${file}" question: ${question / 1000}s delay: ${delay / 1000}s answer: ${answer / 1000}s` +
+          `${answerAfterInterruption ? ` after interruption: ${answerAfterInterruption / 1000}s` : ''}`,
       )
-      stats.push({ file: currentFile, question, delay, answer })
-      await nextFile()
-    } else if (turn.phase === 'answer-interrupted') {
-      const question = turn.questionEndTime - turn.questionStartTime
-      const delay = turn.answerStartTime - turn.questionEndTime
-      stats.push({ file: previousFile, question, delay, interrupted: true })
+      stats.push({ file, question, delay, answer, answerAfterInterruption })
+      if (turn.phase === 'answer-end') {
+        if (nextFileTimeout) {
+          clearTimeout(nextFileTimeout)
+        }
+        await nextFile()
+      }
     }
   })
   await nextFile()

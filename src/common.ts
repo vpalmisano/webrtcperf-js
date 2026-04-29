@@ -96,6 +96,14 @@ export const config = {
    * List of video codecs to disable overriding the SDP capabilities.
    */
   GET_CAPABILITIES_DISABLED_VIDEO_CODECS: [] as string[],
+  /**
+   * If set, the log will be shown in a page element.
+   */
+  SHOW_PAGE_LOG: false as EnableValue,
+  /**
+   * The regex to filter the log messages to show in the page element.
+   */
+  SHOW_PAGE_FILTER: '',
 }
 
 /**
@@ -379,6 +387,42 @@ if (window.webrtcperf_serializedConsoleLog) {
  */
 export function log(...args: unknown[]) {
   console.log.apply(null, [`[webrtcperf-${getIndex()}]`, ...args])
+  if (config.SHOW_PAGE_LOG) {
+    const text = `[${getIndex()}] ${args.map((arg) => (typeof arg === 'string' ? arg : JSON.stringify(arg))).join(' ')}`
+    if (config.SHOW_PAGE_FILTER && text.match(new RegExp(config.SHOW_PAGE_FILTER))) {
+      logToPage(text)
+    }
+  } else {
+    document.getElementById('webrtcperf-log')?.remove()
+  }
+}
+
+/**
+ * Logs a message to the page element.
+ * @param {string} text The message to log.
+ */
+export function logToPage(text: string): void {
+  if (!document.getElementById('webrtcperf-log')) {
+    const logElement = document.createElement('div')
+    logElement.setAttribute('id', 'webrtcperf-log')
+    logElement.setAttribute(
+      'style',
+      'position: fixed; bottom: 0; left: 0; width: 100vw; height: 100px; background-color: #222; color: #ddd; z-index: 10000; padding: 2px;',
+    )
+    const logContainer = document.createElement('pre')
+    logContainer.setAttribute('id', 'webrtcperf-log-container')
+    logContainer.setAttribute(
+      'style',
+      'width: 100%; height: 100%; margin: 0; padding: 4px 8px; font-family: monospace; font-size: 10px; overflow: auto;',
+    )
+    logElement.appendChild(logContainer)
+    document.body.appendChild(logElement)
+  }
+  const logContainer = document.getElementById('webrtcperf-log-container')
+  if (logContainer) {
+    logContainer.innerHTML += text + '\n'
+    logContainer.scrollTop = logContainer.scrollHeight
+  }
 }
 
 /**

@@ -39,7 +39,6 @@ export async function saveMediaToStorage(...files: (File | string)[]) {
       name = (file as string).split('/').pop()!
       type = ''
     }
-    log(`[FakeStreamManager] saveMediaToStorage "${name}"`)
     const handle = await storageDir.getFileHandle(name, { create: true })
     const fd = await handle.createWritable()
     if (file instanceof File) {
@@ -65,7 +64,6 @@ export async function saveMediaToStorage(...files: (File | string)[]) {
  * @returns The Object URL of the loaded file.
  */
 export async function loadMediaFromStorage(name: string) {
-  log(`[FakeStreamManager] loadMediaFromStorage "${name}"`)
   const storageRoot = await navigator.storage.getDirectory()
   const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY)
   const handle = await storageDir.getFileHandle(name)
@@ -79,7 +77,6 @@ export async function loadMediaFromStorage(name: string) {
  * @returns A promise that resolves when the file is deleted.
  */
 export async function deleteMediaFromStorage(name: string) {
-  log(`[FakeStreamManager] deleteMediaFromStorage:`, name)
   const storageRoot = await navigator.storage.getDirectory()
   const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY)
   await storageDir.removeEntry(name)
@@ -290,7 +287,7 @@ export class FakeStreamManager {
       clearTimeout(this.pauseTimeout)
       this.pauseTimeout = null
     }
-    this.pauseTimeout = setTimeout(() => this.pause(), this.element.duration * 1000)
+    this.pauseTimeout = setTimeout(() => this.stopMedia(), this.element.duration * 1000)
   }
 
   play(loop = false) {
@@ -309,7 +306,6 @@ export class FakeStreamManager {
     if (!this.url) {
       return
     }
-    log('[FakeStreamManager] pause')
     if (this.pauseTimeout) {
       clearTimeout(this.pauseTimeout)
       this.pauseTimeout = null
@@ -337,6 +333,22 @@ export class FakeStreamManager {
 
   get paused() {
     return this.element.paused
+  }
+
+  get muted() {
+    return this.element.muted
+  }
+
+  set muted(muted: boolean) {
+    this.element.muted = muted
+  }
+
+  get volume() {
+    return this.element.volume
+  }
+
+  set volume(volume: number) {
+    this.element.volume = volume
   }
 
   private incRefcount() {

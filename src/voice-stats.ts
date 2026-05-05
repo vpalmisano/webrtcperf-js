@@ -246,7 +246,7 @@ export async function runQuestionAnswerTest(
 
   fakeStreamManager.stopMedia()
   fakeStreamManager.muted = false
-  fakeStreamManager.volume = 0.25
+  fakeStreamManager.volume = 1.0
 
   const nextFile = async () => {
     if (files.length) {

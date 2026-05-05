@@ -131,6 +131,7 @@ export class FakeStreamManager {
   private stream: MediaStream | null = null
   private pauseTimeout: NodeJS.Timeout | null = null
   private refcount = 0
+  private silenceInterval: NodeJS.Timeout | null = null
 
   constructor() {
     this.videoCanvas = document.createElement('canvas')
@@ -150,11 +151,33 @@ export class FakeStreamManager {
     if (this.audioCtx.state !== 'running') {
       this.audioCtx.resume().catch((err) => log('[FakeStreamManager] audioCtx resume error:', err))
     }
+    this.startSilence()
 
     this.element = document.createElement('video') as ExtHTMLVideoElement
     this.element.crossOrigin = 'anonymous'
     this.element.loop = true
     this.element.muted = true
+  }
+
+  startSilence() {
+    if (this.silenceInterval) {
+      return
+    }
+    const CHUNK_DURATION = 0.2
+    const CHUNK_SIZE = this.audioCtx.sampleRate * CHUNK_DURATION
+    this.silenceInterval = setInterval(async () => {
+      const audioSource = this.audioCtx.createBufferSource()
+      audioSource.buffer = this.audioCtx.createBuffer(1, CHUNK_SIZE, this.audioCtx.sampleRate)
+      audioSource.connect(this.audioDest)
+      audioSource.start()
+    }, CHUNK_DURATION * 1000)
+  }
+
+  stopSilence() {
+    if (this.silenceInterval) {
+      clearInterval(this.silenceInterval)
+      this.silenceInterval = null
+    }
   }
 
   /**
@@ -248,11 +271,14 @@ export class FakeStreamManager {
 
     const audioTrack = this.stream.getAudioTracks()[0]
     if (audioTrack) {
+      this.stopSilence()
       this.audioSource = this.audioCtx.createMediaStreamSource(new MediaStream([audioTrack]))
       this.audioSource.connect(this.audioDest)
       if (this.audioCtx.state === 'suspended') {
         await this.audioCtx.resume()
       }
+    } else {
+      this.startSilence()
     }
 
     this.url = url
@@ -279,6 +305,7 @@ export class FakeStreamManager {
     if (this.audioSource) {
       this.audioSource.disconnect(this.audioDest)
       this.audioSource = undefined
+      this.startSilence()
     }
   }
 

@@ -336,7 +336,7 @@ async function getSenderStats(sender: RTCRtpSender, pc: RTCPeerConnection, now: 
       // loss rate
       const lost = positiveDiff(values.outboundRtp.packetsLost, prevStats.values.outboundRtp.packetsLost)
       const sent = positiveDiff(values.outboundRtp.packetsSent, prevStats.values.outboundRtp.packetsSent)
-      values.outboundRtp.packetsLossRate = calculateLossRate(lost, lost + sent)
+      values.outboundRtp.packetsLossRate = calculateLossRate(lost, sent)
       // quality limitations
       const totalQualityLimitationDurationsDiff = positiveDiff(
         values.outboundRtp.qualityLimitationDurationsTotal,

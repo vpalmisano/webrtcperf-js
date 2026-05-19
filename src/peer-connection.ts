@@ -455,7 +455,7 @@ export function filterTransceiversTracks(direction: 'send' | 'recv', kind: 'audi
  * Get the transceiver track by index, waiting for the track to be available.
  * @param direction - The direction of the transceiver.
  * @param kind - The kind of the track.
- * @param index - The index of the track.
+ * @param filterFunction - The filter function to use to filter the returned track.
  * @param retryTime - The time to retry in seconds.
  * @param timeout - The timeout in seconds. Set to 0 to wait indefinitely.
  * @returns The track.
@@ -463,19 +463,20 @@ export function filterTransceiversTracks(direction: 'send' | 'recv', kind: 'audi
 export async function getTransceiversTrack(
   direction: 'send' | 'recv',
   kind: 'audio' | 'video' | 'screen',
-  index = 0,
+  filterFunction: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => boolean = () => true,
   retryTime = 1,
   timeout = 0,
 ) {
   const startTime = Date.now()
   while (true) {
     const ret = filterTransceiversTracks(direction, kind)
-    const track = ret[index]?.track
-    if (track) {
-      return track
+    for (const [index, { tranceiver, track }] of ret.entries()) {
+      if (filterFunction(tranceiver, track, index)) {
+        return track
+      }
     }
     if (timeout > 0 && Date.now() - startTime > timeout * 1000) {
-      throw new Error(`Timeout getting track ${index} ${direction} ${kind}`)
+      throw new Error(`Timeout getting track ${direction} ${kind}`)
     }
     await sleep(retryTime * 1000)
   }

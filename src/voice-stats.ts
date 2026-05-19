@@ -222,25 +222,23 @@ export type QuestionAnswerStats = {
 /**
  * Run a question answer test getting the send and recv tracks from the running transceivers.
  * @param mediaFiles - The media files to use for the test. It can be an array of URLs or an array of storage names or parts of the names.
- * @param sendTrackIndex - The index of the send track. Use this to get a specific send track from the running transceivers.
- * @param recvTrackIndex - The index of the recv track. Use this to get a specific recv track from the running transceivers.
+ * @param sendTrackFilter - The filter function to use to filter the send track.
+ * @param recvTrackFilter - The filter function to use to filter the recv track.
  * @param endTestCallback - The callback called when the test ends.
  * @returns The stop function to interrupt the test and the collected stats.
  */
 export async function runQuestionAnswerTest(
   mediaFiles: string[],
-  sendTrackIndex = 0,
-  recvTrackIndex = 0,
+  sendTrackFilter: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => boolean = () => true,
+  recvTrackFilter: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => boolean = () => true,
   interruptAnswerAfter = 0,
   endTestCallback?: (stats: QuestionAnswerStats[]) => void,
 ) {
-  log(
-    `runQuestionAnswerTest mediaFiles: ${mediaFiles.length} sendTrackIndex: ${sendTrackIndex} recvTrackIndex: ${recvTrackIndex} interruptAnswerAfter: ${interruptAnswerAfter}`,
-  )
+  log(`runQuestionAnswerTest mediaFiles: ${mediaFiles.length} interruptAnswerAfter: ${interruptAnswerAfter}`)
   const files = mediaFiles.slice()
   const stats: QuestionAnswerStats[] = []
-  const sendTrack = await getTransceiversTrack('send', 'audio', sendTrackIndex)
-  const recvTrack = await getTransceiversTrack('recv', 'audio', recvTrackIndex)
+  const sendTrack = await getTransceiversTrack('send', 'audio', sendTrackFilter)
+  const recvTrack = await getTransceiversTrack('recv', 'audio', recvTrackFilter)
   let currentFile = ''
   let nextFileTimeout: NodeJS.Timeout | undefined = undefined
 

@@ -229,8 +229,10 @@ export type QuestionAnswerStats = {
  */
 export async function runQuestionAnswerTest(
   mediaFiles: string[],
-  sendTrackFilter: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => boolean = () => true,
-  recvTrackFilter: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => boolean = () => true,
+  sendTrackFilter: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => Promise<boolean> = () =>
+    Promise.resolve(true),
+  recvTrackFilter: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => Promise<boolean> = () =>
+    Promise.resolve(true),
   interruptAnswerAfter = 0,
   endTestCallback?: (stats: QuestionAnswerStats[]) => void,
 ) {

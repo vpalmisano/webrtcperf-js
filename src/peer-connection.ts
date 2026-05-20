@@ -463,7 +463,8 @@ export function filterTransceiversTracks(direction: 'send' | 'recv', kind: 'audi
 export async function getTransceiversTrack(
   direction: 'send' | 'recv',
   kind: 'audio' | 'video' | 'screen',
-  filterFunction: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => boolean = () => true,
+  filterFunction: (tranceiver: RTCRtpTransceiver, track: MediaStreamTrack, index: number) => Promise<boolean> = () =>
+    Promise.resolve(true),
   retryTime = 1,
   timeout = 0,
 ) {
@@ -471,8 +472,12 @@ export async function getTransceiversTrack(
   while (true) {
     const ret = filterTransceiversTracks(direction, kind)
     for (const [index, { tranceiver, track }] of ret.entries()) {
-      if (filterFunction(tranceiver, track, index)) {
-        return track
+      try {
+        if (await filterFunction(tranceiver, track, index)) {
+          return track
+        }
+      } catch (error) {
+        log(`Error filtering track ${direction} ${kind} ${index}: ${error}`)
       }
     }
     if (timeout > 0 && Date.now() - startTime > timeout * 1000) {

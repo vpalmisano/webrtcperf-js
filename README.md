@@ -15,6 +15,11 @@ getDisplayMedia, evaluate the end-to-end delay, etc.
 </head>
 ```
 
+Or, install the library as a project dependency and import it:
+```js
+window.webrtcperf = await import('@vpalmisano/webrtcperf-js');
+```
+
 ## Userscript usage
 The library can be used directly into a regular Google Chome browser session.
 

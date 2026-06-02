@@ -116,8 +116,8 @@ function clampConstraint(value: ConstrainULong, maxValue: number) {
 export type ExtHTMLVideoElement = HTMLVideoElement & { captureStream: () => MediaStream }
 
 export class FakeStreamManager {
-  public readonly drawTimestamp: boolean
-  public readonly audioTickDuration: number
+  public drawTimestamp: boolean
+  public audioTickDuration: number
 
   private readonly videoCanvas: HTMLCanvasElement
   private readonly width = 1920

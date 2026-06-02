@@ -140,6 +140,7 @@ export const getFakeTrack = async (kind: 'audio' | 'video', constraints?: MediaT
   if (config.MEDIA_URL) {
     await fakeStreamManager.setMedia(config.MEDIA_URL, config.LOOP_MEDIA)
   }
+  fakeStreamManager.startAudioCtx()
   return fakeStreamManager.getTrack(kind, constraints)
 }
 
@@ -159,7 +160,10 @@ if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     const useFakeMedia = enabledForSession(params.overrideGetUserMedia) || config.MEDIA_URL
 
     if (constraints?.audio && useFakeMedia) {
-      const audioTrack = await getFakeTrack('audio')
+      const audioTrack = await getFakeTrack(
+        'audio',
+        typeof constraints.audio === 'object' ? constraints.audio : undefined,
+      )
       mediaStream.addTrack(audioTrack)
     }
     if (constraints?.video && useFakeMedia) {
@@ -245,28 +249,48 @@ if (navigator.mediaDevices && 'setCaptureHandleConfig' in navigator.mediaDevices
   }
 }
 
+/**
+ * Creates a new MediaDeviceInfo object.
+ * @param deviceId - The device ID.
+ * @param kind - The kind of device.
+ * @param label - The label of the device.
+ * @param groupId - The group ID of the device.
+ * @returns A new MediaDeviceInfo object.
+ */
+export function MediaDevice(deviceId: string, kind: MediaDeviceKind, label: string, groupId: string): MediaDeviceInfo {
+  return {
+    deviceId,
+    kind,
+    label,
+    groupId,
+    toJSON: () => ({ deviceId, kind, label, groupId }),
+  }
+}
+
+/**
+ * The list of fake media devices returned by enumerateDevices when fake media is enabled.
+ */
+export const mediaDevices: MediaDeviceInfo[] = [
+  MediaDevice('default', 'videoinput', 'WebRTCPerf Video', 'webrtcperf'),
+  MediaDevice('default', 'audioinput', 'WebRTCPerf Audio', 'webrtcperf'),
+  MediaDevice('default', 'audiooutput', 'WebRTCPerf Audio Output', 'webrtcperf-output'),
+]
+
 if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
   const NativeEnumerateDevices = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
-  navigator.mediaDevices.enumerateDevices = async () => {
-    const useFakeMedia = enabledForSession(params.overrideGetUserMedia) || config.MEDIA_URL
-    if (useFakeMedia) {
-      const devices = [
-        {
-          deviceId: 'webrtcperf-video',
-          kind: 'videoinput',
-          label: 'WebRTCPerf Video',
-          groupId: 'webrtcperf',
-        },
-        {
-          deviceId: 'webrtcperf-audio',
-          kind: 'audioinput',
-          label: 'WebRTCPerf Audio',
-          groupId: 'webrtcperf',
-        },
-      ] as MediaDeviceInfo[]
-      return devices
+  navigator.mediaDevices.enumerateDevices = () => {
+    if (enabledForSession(params.overrideGetUserMedia) || config.MEDIA_URL) {
+      return Promise.resolve(mediaDevices)
     }
-    const devices = await NativeEnumerateDevices()
-    return devices
+    return NativeEnumerateDevices()
   }
+}
+
+/**
+ * Dispatches a devicechange event.
+ */
+export function dispatchDeviceChange() {
+  const event = new Event('devicechange')
+  navigator.mediaDevices.ondevicechange?.(event)
+  navigator.mediaDevices.dispatchEvent(event)
 }

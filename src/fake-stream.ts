@@ -1,4 +1,5 @@
 import { log, sleep } from './common'
+import { clearInterval, clearTimeout, setInterval, setTimeout } from 'worker-timers'
 
 export async function openMediaPicker() {
   const input = document.createElement('input')
@@ -115,6 +116,9 @@ function clampConstraint(value: ConstrainULong, maxValue: number) {
 export type ExtHTMLVideoElement = HTMLVideoElement & { captureStream: () => MediaStream }
 
 export class FakeStreamManager {
+  public readonly drawTimestamp: boolean
+  public readonly audioTickDuration: number
+
   private readonly videoCanvas: HTMLCanvasElement
   private readonly width = 1920
   private readonly height = 1080
@@ -129,11 +133,23 @@ export class FakeStreamManager {
   private readonly element: ExtHTMLVideoElement
   public url: string | null = null
   private stream: MediaStream | null = null
-  private pauseTimeout: NodeJS.Timeout | null = null
+  private pauseTimeout: ReturnType<typeof setTimeout> | null = null
   private refcount = 0
-  private silenceInterval: NodeJS.Timeout | null = null
+  private audioOscillator?: OscillatorNode
+  private audioGain?: GainNode
+  private audioPlaceholderInterval: ReturnType<typeof setInterval> | null = null
+  private videoPlaceholderInterval: ReturnType<typeof setInterval> | null = null
 
-  constructor() {
+  constructor({
+    drawTimestamp = false,
+    audioTickDuration = 0,
+  }: {
+    drawTimestamp?: boolean
+    audioTickDuration?: number
+  } = {}) {
+    this.drawTimestamp = drawTimestamp
+    this.audioTickDuration = audioTickDuration
+
     this.videoCanvas = document.createElement('canvas')
     this.videoCanvas.width = this.width
     this.videoCanvas.height = this.height
@@ -141,6 +157,7 @@ export class FakeStreamManager {
     ctx.fillStyle = 'black'
     ctx.fillRect(0, 0, this.videoCanvas.width, this.videoCanvas.height)
     this.videoTrack = this.videoCanvas.captureStream(this.frameRate).getVideoTracks()[0]
+    this.startVideoPlaceholder()
 
     this.audioCtx = new AudioContext({
       latencyHint: 'interactive',
@@ -148,10 +165,7 @@ export class FakeStreamManager {
     })
     this.audioDest = this.audioCtx.createMediaStreamDestination()
     this.audioTrack = this.audioDest.stream.getAudioTracks()[0]
-    if (this.audioCtx.state !== 'running') {
-      this.audioCtx.resume().catch((err) => log('[FakeStreamManager] audioCtx resume error:', err))
-    }
-    this.startSilence()
+    this.startAudioPlaceholder()
 
     this.element = document.createElement('video') as ExtHTMLVideoElement
     this.element.crossOrigin = 'anonymous'
@@ -159,25 +173,129 @@ export class FakeStreamManager {
     this.element.muted = true
   }
 
-  startSilence() {
-    if (this.silenceInterval) {
-      return
+  startAudioCtx() {
+    if (this.audioCtx.state !== 'running') {
+      this.audioCtx.resume().catch((err) => log('[FakeStreamManager] startAudioCtx resume error:', err))
     }
-    const CHUNK_DURATION = 0.2
-    const CHUNK_SIZE = this.audioCtx.sampleRate * CHUNK_DURATION
-    this.silenceInterval = setInterval(async () => {
-      const audioSource = this.audioCtx.createBufferSource()
-      audioSource.buffer = this.audioCtx.createBuffer(1, CHUNK_SIZE, this.audioCtx.sampleRate)
-      audioSource.connect(this.audioDest)
-      audioSource.start()
-    }, CHUNK_DURATION * 1000)
   }
 
-  stopSilence() {
-    if (this.silenceInterval) {
-      clearInterval(this.silenceInterval)
-      this.silenceInterval = null
+  startAudioPlaceholder() {
+    if (!this.audioOscillator) {
+      this.audioOscillator = this.audioCtx.createOscillator()
+      this.audioOscillator.frequency.value = 440
+      this.audioGain = this.audioCtx.createGain()
+      this.audioGain.gain.value = 0
+      this.audioOscillator.connect(this.audioGain)
+      this.audioGain.connect(this.audioDest)
+      this.audioOscillator.start()
     }
+
+    if (!this.audioPlaceholderInterval) {
+      this.audioPlaceholderInterval = setInterval(() => {
+        if (this.audioTickDuration) {
+          const now = this.audioCtx.currentTime
+          this.audioGain?.gain.setValueAtTime(1, now)
+          this.audioGain?.gain.setValueAtTime(0, now + this.audioTickDuration)
+        }
+      }, 1000)
+    }
+  }
+
+  stopAudioPlaceholder() {
+    if (this.audioOscillator && this.audioGain) {
+      this.audioOscillator.stop()
+      this.audioOscillator.disconnect(this.audioGain)
+      this.audioOscillator = undefined
+      this.audioGain.disconnect(this.audioDest)
+      this.audioGain = undefined
+    }
+    if (this.audioPlaceholderInterval) {
+      clearInterval(this.audioPlaceholderInterval)
+      this.audioPlaceholderInterval = null
+    }
+  }
+
+  startVideoPlaceholder() {
+    if (this.videoPlaceholderInterval) {
+      return
+    }
+    const ctx = this.videoCanvas.getContext('2d')!
+    const { width, height } = this
+    const radius = Math.round(Math.min(this.width, this.height) / 20)
+    let x = width / 2
+    let y = height / 2
+    let dx = Math.round(6 + Math.random() * 4)
+    let dy = Math.round(5 + Math.random() * 4)
+    if (Math.random() < 0.5) dx = -dx
+    if (Math.random() < 0.5) dy = -dy
+
+    this.videoPlaceholderInterval = setInterval(() => {
+      x += dx
+      y += dy
+
+      if (x - radius <= 0) {
+        x = radius
+        dx = Math.abs(dx) * (0.8 + Math.random() * 0.4)
+        dy += (Math.random() - 0.5) * 4
+      } else if (x + radius >= width) {
+        x = width - radius
+        dx = -Math.abs(dx) * (0.8 + Math.random() * 0.4)
+        dy += (Math.random() - 0.5) * 4
+      }
+      if (y - radius <= 0) {
+        y = radius
+        dy = Math.abs(dy) * (0.8 + Math.random() * 0.4)
+        dx += (Math.random() - 0.5) * 4
+      } else if (y + radius >= height) {
+        y = height - radius
+        dy = -Math.abs(dy) * (0.8 + Math.random() * 0.4)
+        dx += (Math.random() - 0.5) * 4
+      }
+
+      const speed = Math.hypot(dx, dy)
+      const minSpeed = 5
+      const maxSpeed = 20
+      if (speed < minSpeed) {
+        dx = (dx / speed) * minSpeed
+        dy = (dy / speed) * minSpeed
+      } else if (speed > maxSpeed) {
+        dx = (dx / speed) * maxSpeed
+        dy = (dy / speed) * maxSpeed
+      }
+
+      ctx.fillStyle = 'black'
+      ctx.fillRect(0, 0, width, height)
+
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, Math.PI * 2)
+      ctx.fillStyle = 'red'
+      ctx.fill()
+
+      if (this.drawTimestamp) {
+        this.drawVideoTimestamp()
+      }
+    }, 1000 / this.frameRate)
+  }
+
+  stopVideoPlaceholder() {
+    if (this.videoPlaceholderInterval) {
+      clearInterval(this.videoPlaceholderInterval)
+      this.videoPlaceholderInterval = null
+    }
+  }
+
+  drawVideoTimestamp() {
+    const now = new Date()
+    const timestamp = now.toISOString().replace('T', ' ').replace('Z', '')
+    const ctx = this.videoCanvas.getContext('2d')!
+    const size = Math.round(Math.min(this.videoCanvas.width, this.videoCanvas.height) / 15)
+    const x = this.videoCanvas.width / 2
+    const y = this.videoCanvas.height / 2
+    ctx.font = `${size}px "Noto Mono", monospace`
+    ctx.fillStyle = 'white'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(timestamp, x, y)
   }
 
   /**
@@ -221,6 +339,7 @@ export class FakeStreamManager {
 
     const videoTrack = this.stream.getVideoTracks()[0]
     if (videoTrack) {
+      this.stopVideoPlaceholder()
       const { readable } = new window.MediaStreamTrackProcessor({ track: videoTrack })
       const { width, height } = this
       const ctx = this.videoCanvas.getContext('2d')!
@@ -230,6 +349,12 @@ export class FakeStreamManager {
         ctx.fillStyle = 'black'
         ctx.fillRect(0, 0, width, height)
         this.stopMedia(err)
+        this.startVideoPlaceholder()
+      }
+      const drawTimestamp = () => {
+        if (this.drawTimestamp) {
+          this.drawVideoTimestamp()
+        }
       }
       const writableStream = new window.WritableStream(
         {
@@ -253,6 +378,7 @@ export class FakeStreamManager {
               }
               ctx.drawImage(videoFrame, x, y, codedWidth, codedHeight, 0, 0, width, height)
             }
+            drawTimestamp()
             videoFrame.close()
           },
           close() {
@@ -267,18 +393,20 @@ export class FakeStreamManager {
       readable
         .pipeTo(writableStream)
         .catch((err: unknown) => log(`[FakeStreamManager] setMedia error: ${(err as Error).message}`))
+    } else {
+      this.startVideoPlaceholder()
     }
 
     const audioTrack = this.stream.getAudioTracks()[0]
     if (audioTrack) {
-      this.stopSilence()
+      this.stopAudioPlaceholder()
       this.audioSource = this.audioCtx.createMediaStreamSource(new MediaStream([audioTrack]))
       this.audioSource.connect(this.audioDest)
       if (this.audioCtx.state === 'suspended') {
         await this.audioCtx.resume()
       }
     } else {
-      this.startSilence()
+      this.startAudioPlaceholder()
     }
 
     this.url = url
@@ -305,7 +433,7 @@ export class FakeStreamManager {
     if (this.audioSource) {
       this.audioSource.disconnect(this.audioDest)
       this.audioSource = undefined
-      this.startSilence()
+      this.startAudioPlaceholder()
     }
   }
 
@@ -380,23 +508,32 @@ export class FakeStreamManager {
 
   private incRefcount() {
     this.refcount++
-    if (this.element.paused) {
+    if (this.element.src && this.element.paused) {
       this.element.play().catch((err) => log('[FakeStreamManager] incRefcount play error:', err))
     }
   }
 
   private decRefcount() {
     this.refcount = Math.max(this.refcount - 1, 0)
-    if (this.refcount === 0) {
+    if (this.element.src && this.refcount === 0) {
       this.element.pause()
     }
   }
 
+  private clonedTracks = new Set<MediaStreamTrack>()
+
+  /**
+   * Returns a cloned track.
+   * @param kind - The kind of track to get.
+   * @param constraints - The constraints to apply to the track.
+   * @returns A promise that resolves when the track is cloned.
+   */
   async getTrack(kind: 'video' | 'audio', constraints?: MediaTrackConstraints) {
     log(
       `[FakeStreamManager] getTrack ${kind} refcount: ${this.refcount}, constraints: ${JSON.stringify(constraints ?? {})}`,
     )
     const track = kind === 'video' ? this.videoTrack.clone() : this.audioTrack.clone()
+    this.clonedTracks.add(track)
     const trackStop = track.stop.bind(track)
     let stopped = false
     track.stop = () => {
@@ -407,6 +544,7 @@ export class FakeStreamManager {
       log('[FakeStreamManager] getTrack stop')
       trackStop()
       this.decRefcount()
+      this.clonedTracks.delete(track)
     }
     this.incRefcount()
     if (constraints) {
@@ -420,9 +558,25 @@ export class FakeStreamManager {
       if (constraints.frameRate) {
         constraints.frameRate = clampConstraint(constraints.frameRate, this.frameRate)
       }
-      await track.applyConstraints(constraints)
+      try {
+        await track.applyConstraints(constraints)
+      } catch (err) {
+        log(`[FakeStreamManager] getTrack applyConstraints error:`, err)
+      }
     }
     return track
+  }
+
+  /**
+   * Ends all the cloned tracks.
+   * @param kind - The kind of track to end. If not provided, all the cloned tracks will be ended.
+   */
+  endTracks(kind?: 'video' | 'audio') {
+    for (const track of this.clonedTracks) {
+      if (kind === undefined || track.kind === kind) {
+        track.dispatchEvent(new Event('ended'))
+      }
+    }
   }
 }
 

@@ -15,7 +15,7 @@ getDisplayMedia, evaluate the end-to-end delay, etc.
 </head>
 ```
 
-Or, install the library as a project dependency and import it:
+Or, install the library as a project dependency (`npm install @vpalmisano/webrtcperf-js`) and import it:
 ```js
 window.webrtcperf = await import('@vpalmisano/webrtcperf-js');
 ```

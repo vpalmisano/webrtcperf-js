@@ -15,7 +15,19 @@ export async function openMediaPicker() {
   return files
 }
 
-const STORAGE_DIRECTORY = 'webrtcperf'
+export const STORAGE_DIRECTORY = 'webrtcperf'
+
+/**
+ * Opens a writable stream to save a file in the browser's storage.
+ * @param name - The name of the file to create or overwrite.
+ * @returns A writable stream for the file.
+ */
+export async function createMediaStorageWritable(name: string) {
+  const storageRoot = await navigator.storage.getDirectory()
+  const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY, { create: true })
+  const handle = await storageDir.getFileHandle(name, { create: true })
+  return handle.createWritable()
+}
 
 /**
  * It saves the files to the browser's storage and returns the storage:// URLs of the saved files.
@@ -73,6 +85,26 @@ export async function loadMediaFromStorage(name: string) {
 }
 
 /**
+ * It downloads the file from the browser's storage and saves it to the user's download directory.
+ * @param name - The name of the file to download from storage.
+ */
+export async function downloadMediaFromStorage(name: string) {
+  const storageRoot = await navigator.storage.getDirectory()
+  const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY)
+  if (name.startsWith(`storage://${STORAGE_DIRECTORY}/`)) {
+    name = name.replace(`storage://${STORAGE_DIRECTORY}/`, '')
+  }
+  const handle = await storageDir.getFileHandle(name)
+  const file = await handle.getFile()
+  const url = URL.createObjectURL(file)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/**
  * It deletes the file from the browser's storage.
  * @param name - The name of the file to delete from storage.
  * @returns A promise that resolves when the file is deleted.
@@ -80,6 +112,9 @@ export async function loadMediaFromStorage(name: string) {
 export async function deleteMediaFromStorage(name: string) {
   const storageRoot = await navigator.storage.getDirectory()
   const storageDir = await storageRoot.getDirectoryHandle(STORAGE_DIRECTORY)
+  if (name.startsWith(`storage://${STORAGE_DIRECTORY}/`)) {
+    name = name.replace(`storage://${STORAGE_DIRECTORY}/`, '')
+  }
   await storageDir.removeEntry(name)
 }
 

@@ -1,4 +1,5 @@
 import { createWorker, overrides, log, config } from './common'
+import { createMediaStorageWritable, STORAGE_DIRECTORY } from './fake-stream'
 
 async function WsClient(url: string) {
   const client = new WebSocket(url, [])
@@ -51,6 +52,83 @@ const saveFileWorkerFn = () => {
     view.setUint32(24, 0, true) // frame count
     view.setUint32(28, 0, true) // unused
     return new Uint8Array(data)
+  }
+
+  const buildWaveHeader = (sampleRate: number, bitsPerSample: number, channels: number) => {
+    const data = new ArrayBuffer(44)
+    const view = new DataView(data)
+    view.setUint32(0, stringToBinary('RIFF'), true)
+    view.setUint32(4, 0xffffffff, true) // file size unknown (streaming)
+    view.setUint32(8, stringToBinary('WAVE'), true)
+    view.setUint32(12, stringToBinary('fmt '), true)
+    view.setUint32(16, 16, true) // fmt chunk size
+    view.setUint16(20, bitsPerSample === 32 ? 3 : 1, true)
+    view.setUint16(22, channels, true)
+    view.setUint32(24, sampleRate, true)
+    view.setUint32(28, (sampleRate * bitsPerSample * channels) / 8, true)
+    view.setUint16(32, (bitsPerSample * channels) / 8, true)
+    view.setUint16(34, bitsPerSample, true)
+    view.setUint32(36, stringToBinary('data'), true)
+    view.setUint32(40, 0xffffffff, true) // data size unknown (streaming)
+    return new Uint8Array(data)
+  }
+
+  let audioFrameToPcm16Supported = true
+
+  const floatToPcm16 = (sample: number) => {
+    const s = Math.max(-1, Math.min(1, sample))
+    return s < 0 ? s * 0x8000 : s * 0x7fff
+  }
+
+  const audioFrameToPcm16 = (frame: AudioData) => {
+    const { numberOfFrames, numberOfChannels, format } = frame
+    const pcm = new Int16Array(numberOfFrames * numberOfChannels)
+
+    if (format === 's16') {
+      frame.copyTo(pcm, { planeIndex: 0 })
+      return new Uint8Array(pcm.buffer)
+    }
+
+    if (format === 's16-planar') {
+      for (let ch = 0; ch < numberOfChannels; ch++) {
+        const plane = new Int16Array(numberOfFrames)
+        frame.copyTo(plane, { planeIndex: ch })
+        for (let i = 0; i < numberOfFrames; i++) {
+          pcm[i * numberOfChannels + ch] = plane[i]
+        }
+      }
+      return new Uint8Array(pcm.buffer)
+    }
+
+    if (audioFrameToPcm16Supported) {
+      try {
+        frame.copyTo(pcm, { planeIndex: 0, format: 's16' })
+        return new Uint8Array(pcm.buffer)
+      } catch {
+        // Browsers may only support copy conversion to f32-planar.
+        audioFrameToPcm16Supported = false
+      }
+    }
+
+    const isPlanar = format?.includes('planar') ?? true
+
+    if (isPlanar) {
+      for (let ch = 0; ch < numberOfChannels; ch++) {
+        const float = new Float32Array(numberOfFrames)
+        frame.copyTo(float, { planeIndex: ch })
+        for (let i = 0; i < numberOfFrames; i++) {
+          pcm[i * numberOfChannels + ch] = floatToPcm16(float[i])
+        }
+      }
+    } else {
+      const float = new Float32Array(numberOfFrames * numberOfChannels)
+      frame.copyTo(float, { planeIndex: 0 })
+      for (let i = 0; i < pcm.length; i++) {
+        pcm[i] = floatToPcm16(float[i])
+      }
+    }
+
+    return new Uint8Array(pcm.buffer)
   }
 
   const websocketControllers = new Map()
@@ -204,14 +282,16 @@ const saveFileWorkerFn = () => {
         debug(`saveMediaTrack error=${(err as Error).message}`)
       })
     } else {
+      let headerSent = false
       const writableStream = new WritableStream(
         {
           async write(frame: AudioData) {
             try {
-              const { numberOfFrames } = frame
-              const data = new Float32Array(numberOfFrames)
-              frame.copyTo(data, { planeIndex: 0 })
-              await writer.write(new Uint8Array(data))
+              if (!headerSent) {
+                await writer.write(buildWaveHeader(frame.sampleRate, 16, frame.numberOfChannels))
+                headerSent = true
+              }
+              await writer.write(audioFrameToPcm16(frame))
             } catch (err) {
               debug(`saveMediaTrack error=${(err as Error).message}`)
             }
@@ -258,9 +338,10 @@ export function getSaveFileWorker() {
 }
 
 /**
- * Saves the media track to file. Audio tracks are saved as a raw float32 array,
+ * Saves the media track to file. Audio tracks are saved as 16-bit PCM in a WAV container,
  * video tracks are saved as VP8 encoded packets in an IVF container.
- * The file is sent to the server defined in `config.SAVE_MEDIA_URL` using a WebSocket connection.
+ * If `config.SAVE_MEDIA_URL` is set, the file is sent to that server using a WebSocket connection.
+ * Otherwise, it is saved to the browser's storage as `storage://webrtcperf/<filename>`.
  * @param {MediaStreamTrack} track The media track to save.
  * @param {'send'|'recv'} sendrecv If 'send', it is a local track. If 'recv', it is a remote track.
  * @param {Number} enableStart If greater than 0, the track is enabled after this time in milliseconds.
@@ -330,7 +411,7 @@ export async function saveMediaTrack(
     }, enableEnd)
   }
 
-  const filename = `${overrides.getParticipantNameForSave(sendrecv, track)}${kind === 'audio' ? '.f32le.raw' : '.ivf.raw'}`
+  const filename = `${overrides.getParticipantNameForSave(sendrecv, track)}${kind === 'audio' ? '.wav' : '.ivf.raw'}`
   let writable: WritableStream
   if (config.SAVE_MEDIA_URL) {
     const destination = `${config.SAVE_MEDIA_URL}${config.SAVE_MEDIA_URL.includes('?') ? '&' : '?'}filename=${filename}`
@@ -344,19 +425,18 @@ export async function saveMediaTrack(
       },
     })
   } else {
-    const handle = await window.showSaveFilePicker({ suggestedName: filename })
-    const writableStream = await handle.createWritable()
+    const writableStream = await createMediaStorageWritable(filename)
     writable = new WritableStream({
-      write(chunk) {
-        writableStream.write(chunk)
+      async write(chunk) {
+        await writableStream.write(chunk)
       },
-      close() {
-        writableStream.close()
+      async close() {
+        await writableStream.close()
       },
     })
   }
 
-  log(`saveMediaTrack ${filename}`)
+  log(`saveMediaTrack ${config.SAVE_MEDIA_URL ? filename : `storage://${STORAGE_DIRECTORY}/${filename}`}`)
   getSaveFileWorker().postMessage(
     {
       action: 'start',

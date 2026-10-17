@@ -84,3 +84,48 @@ recognizes the video at receiver side using [Tesseract.js](https://tesseract.pro
 The audio track at sender side is mixed with signals generated with the
 [ggwave](https://github.com/ggerganov/ggwave) library; at receiver side, the same library is used do decode the received signals with the encoded sender timestamp.
 Sender and receiver machine clocks must be syncronized.
+
+### Measure the question/answer timings in an AI Voice-to-Voice application
+Join a voice session, then measure the delay between the local question (send audio) and the remote answer (recv audio) using voice activity detection:
+```js
+const pc = [...webrtcperf.PeerConnections.values()][0]
+const sendTrack = pc.getTransceivers().find(t => t.sender.track?.kind === 'audio')?.sender.track
+const recvTrack = pc.getTransceivers().find(t => t.receiver.track?.kind === 'audio')?.receiver.track
+
+const stop = webrtcperf.estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 500, (turn) => {
+  console.log(turn.phase, turn)
+  // turn.phase: 'question-start' | 'question-end' | 'answer-start' | 'answer-end' | 'answer-interrupted'
+})
+
+// Mean question→answer delay (seconds):
+webrtcperf.collectQuestionAnswerDelay()
+```
+
+Or run an automated test that plays question audio files through the fake getUserMedia source:
+```js
+const { stop, stats } = await webrtcperf.runQuestionAnswerTest(
+  ['https://example.com/question1.wav', 'https://example.com/question2.wav'],
+  undefined,
+  undefined,
+  0,
+  (stats) => console.log(stats),
+)
+```
+
+You can also preload the questions audio files into the browser storage to avoid
+CORS issues:
+```js
+// Pick local files (or pass URLs / File objects):
+await webrtcperf.saveMediaToStorage()
+// List stored names:
+await webrtcperf.listMediaFiles()
+// Run the test using storage names (or partial matches):
+const { stop, stats } = await webrtcperf.runQuestionAnswerTest(
+  ['question1.wav', 'question2.wav'],
+  undefined,
+  undefined,
+  0,
+  (stats) => console.log(stats),
+)
+```
+

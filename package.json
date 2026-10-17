@@ -13,7 +13,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "version": "1.5.0",
+  "version": "1.6.1",
   "main": "dist/webrtcperf.js",
   "types": "dist/lib/index.d.ts",
   "files": [
@@ -22,8 +22,9 @@
   "license": "ISC",
   "dependencies": {
     "@vpalmisano/ggwave": "0.4.3-2",
+    "chart.js": "^4.5.1",
     "sdp-transform": "^2.15.0",
-    "worker-timers": "^8.0.31"
+    "worker-timers": "^8.0.34"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

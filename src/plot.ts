@@ -178,6 +178,9 @@ const getStyles = (container?: HTMLElement) => `
 }
 
 .title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   flex-grow: 1;
 }
 
@@ -197,6 +200,17 @@ const getStyles = (container?: HTMLElement) => `
   background: #222;
   color: #ddd;
   font: 11px sans-serif;
+  padding: 2px 6px;
+  margin-right: 4px;
+  text-decoration: none;
+}
+
+.link {
+  cursor: pointer;
+  color: #ddd;
+  font: 11px sans-serif;
+  text-decoration: none;
+  flex-shrink: 0;
   padding: 2px 6px;
   margin-right: 4px;
 }
@@ -596,8 +610,19 @@ export class PeerConnectionPlots {
     // Title
     const title = document.createElement('span')
     title.className = 'title'
-    title.textContent = `${container ? '' : '⋮⋮ '}webrtcperf`
+    title.textContent = `${container ? '' : '⋮⋮ '}Plots`
     handle.append(title)
+
+    // Link
+    const link = document.createElement('a')
+    link.href = 'https://github.com/vpalmisano/webrtcperf-js'
+    link.target = '_blank'
+    link.rel = 'noopener noreferrer'
+    link.className = 'link'
+    link.textContent = '➥'
+    link.title = 'webrtcperf-js github page'
+    link.addEventListener('mousedown', (e) => e.stopPropagation())
+    handle.append(link)
 
     // Dialog for options
     const statSelect = this.createStatSelect()

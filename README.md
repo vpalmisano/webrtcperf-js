@@ -88,9 +88,8 @@ Sender and receiver machine clocks must be syncronized.
 ### Measure the question/answer timings in an AI Voice-to-Voice application
 Join a voice session, then measure the delay between the local question (send audio) and the remote answer (recv audio) using voice activity detection:
 ```js
-const pc = [...webrtcperf.PeerConnections.values()][0]
-const sendTrack = pc.getTransceivers().find(t => t.sender.track?.kind === 'audio')?.sender.track
-const recvTrack = pc.getTransceivers().find(t => t.receiver.track?.kind === 'audio')?.receiver.track
+const sendTrack = await webrtcperf.getTransceiversTrack('send', 'audio')
+const recvTrack = await webrtcperf.getTransceiversTrack('recv', 'audio')
 
 const stop = webrtcperf.estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 500, (turn) => {
   console.log(turn.phase, turn)

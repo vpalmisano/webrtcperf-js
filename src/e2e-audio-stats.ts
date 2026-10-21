@@ -1,3 +1,4 @@
+import ggwaveFactory from '@vpalmisano/ggwave'
 import { log } from './common'
 import { MeasuredStats } from './stats'
 
@@ -22,8 +23,8 @@ interface Ggwave {
   decode(instance: number, data: Int8Array): Uint8Array
   rxDurationFrames(instance: number): number
 }
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const ggwave_factory = require('@vpalmisano/ggwave') as () => Promise<Ggwave>
+
+const ggwave_factory = ggwaveFactory as () => Promise<Ggwave>
 
 export const audioEndToEndDelayStats = new MeasuredStats({ ttl: 15 })
 

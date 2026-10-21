@@ -13,14 +13,24 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "version": "1.6.2",
+  "version": "1.7.0",
   "main": "dist/webrtcperf.js",
+  "module": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/lib/index.d.ts",
+      "import": "./dist/lib/index.js",
+      "require": "./dist/webrtcperf.js",
+      "default": "./dist/webrtcperf.js"
+    }
+  },
   "files": [
     "dist"
   ],
   "license": "ISC",
   "dependencies": {
+    "@ricky0123/vad-web": "^0.0.31",
     "@vpalmisano/ggwave": "0.4.3-2",
     "chart.js": "^4.5.1",
     "sdp-transform": "^2.15.0",

@@ -46,7 +46,8 @@ declare global {
 
 export type EnableValue = boolean | string | number
 
-export const VERSION = process.env.VERSION || 'dev'
+export const VERSION =
+  (globalThis as typeof globalThis & { process?: { env?: { VERSION?: string } } }).process?.env?.VERSION || 'dev'
 
 /**
  * Configuration for the webrtcperf tool.

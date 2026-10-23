@@ -280,6 +280,9 @@ export type QuestionAnswerStats = {
 
 /**
  * Run a question answer test getting the send and recv tracks from the running transceivers.
+ * It evaluates the time interval between the end of the question and the start of the answer.
+ * When another question interrupts the current answer, it tracks the amount of time required
+ * by the service to stop processing the previous answer and start with the new one.
  * @param mediaFiles - The media files to use for the test. It can be an array of URLs or an array of storage names or parts of the names.
  * @param sendTrackFilter - The filter function to use to filter the send track.
  * @param recvTrackFilter - The filter function to use to filter the recv track.

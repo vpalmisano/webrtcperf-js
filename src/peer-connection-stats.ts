@@ -46,7 +46,7 @@ function positiveDiff(cur?: number, old?: number) {
   return Math.max(0, (cur ?? 0) - (old ?? 0))
 }
 
-function averageFromTotal(value?: number, prevValue?: number, total?: number, prevTotal?: number) {
+export function averageFromTotal(value?: number, prevValue?: number, total?: number, prevTotal?: number) {
   const diff = positiveDiff(total, prevTotal)
   if (diff) {
     return positiveDiff(value, prevValue) / diff

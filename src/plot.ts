@@ -7,6 +7,7 @@ import {
   OutboundTrackStats,
 } from './peer-connection-stats'
 import { log } from './common'
+import { collectWebSocketStats } from './websocket'
 
 const MAX_AGE_MS = 5 * 60 * 1000
 const PLOT_WIDTH = 280
@@ -16,13 +17,15 @@ const CLOSE_BUTTON_SIZE = 14
 
 type Point = { x: number; y: number }
 type Direction = 'outbound' | 'inbound'
-type Kind = 'audio' | 'video'
+type Kind = 'audio' | 'video' | 'websocket'
 
 const GROUP_ORDER: Record<string, number> = {
   outbound_audio: 0,
   outbound_video: 1,
+  outbound_websocket: 2,
   inbound_audio: 2,
   inbound_video: 3,
+  inbound_websocket: 4,
 }
 
 const STAT_OPTIONS = {
@@ -73,6 +76,7 @@ const STAT_OPTIONS = {
       'totalRoundTripTime',
       'transportRoundTripTime',
     ] as (keyof OutboundRtpStats)[],
+    websocket: ['bitrate'],
   },
   inbound: {
     audio: [
@@ -145,6 +149,7 @@ const STAT_OPTIONS = {
       'transportRoundTripTime',
       'transportTotalRoundTripTime',
     ] as (keyof InboundRtpStats)[],
+    websocket: ['bitrate'],
   },
 } as const
 
@@ -382,6 +387,26 @@ function formatBitrate(bps: number): string {
   return `${value.toFixed(digits)} ${units[unit]}`
 }
 
+function formatBytes(bytes: number): string {
+  if (!isFinite(bytes) || bytes <= 0) return '0 bytes'
+  const units = ['bytes', 'KB', 'MB', 'GB'] as const
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  const digits = unit === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2
+  return `${value.toFixed(digits)} ${units[unit]}`
+}
+
+function formatValue(statName: string, value: number | string | null): string {
+  if (value == null || typeof value !== 'number') return value?.toString() ?? ''
+  if (statName === 'bitrate') return formatBitrate(value)
+  if (statName === 'bytes') return formatBytes(value)
+  return value.toString()
+}
+
 function formatStatLabel(name: string): string {
   return name
     .replace(/([A-Z])/g, ' $1')
@@ -424,7 +449,6 @@ class Plot {
     this.panel.insertPlot(this.wrapper)
 
     const statName = id.split('_').slice(2).join('_')
-    const isBitrate = statName === 'bitrate'
 
     this.chart = new Chart(canvas, {
       type: 'line',
@@ -446,7 +470,7 @@ class Plot {
               label: (item) => {
                 const name = (item.dataset.label ?? '').slice(0, 10)
                 const value = item.parsed.y
-                const formatted = isBitrate && typeof value === 'number' ? formatBitrate(value) : item.formattedValue
+                const formatted = formatValue(statName, value)
                 return `${name}: ${formatted}`
               },
             },
@@ -470,7 +494,7 @@ class Plot {
             ticks: {
               color: 'grey',
               font: { size: 9 },
-              callback: isBitrate ? (value) => formatBitrate(Number(value)) : undefined,
+              callback: (value) => formatValue(statName, value),
             },
             grid: { color: 'grey' },
           },
@@ -584,6 +608,9 @@ export class PeerConnectionPlots {
   private pipWindow: Window | null = null
   private pipButton: HTMLButtonElement | null = null
   private hostParent: Node | null = null
+  private selectDirection: HTMLSelectElement | null = null
+  private selectKind: HTMLSelectElement | null = null
+  private selectStat: HTMLSelectElement | null = null
 
   private constructor({
     intervalMs = 1000,
@@ -825,6 +852,7 @@ export class PeerConnectionPlots {
 
   disableStat(id: string) {
     this.enabledStats.delete(id)
+    this.updateStatSelect()
   }
 
   private getOrCreatePlot(direction: Direction, kind: Kind, name: string) {
@@ -838,7 +866,12 @@ export class PeerConnectionPlots {
     return plot
   }
 
-  private updatePlot(timestamp: number, key: string, rtpDirection: Direction, rtp: OutboundRtpStats | InboundRtpStats) {
+  private updateRtpPlot(
+    timestamp: number,
+    key: string,
+    rtpDirection: Direction,
+    rtp: OutboundRtpStats | InboundRtpStats,
+  ) {
     for (const name of this.enabledStats) {
       const [direction, kind, ...statParts] = name.split('_')
       const stat = statParts.join('_')
@@ -863,13 +896,41 @@ export class PeerConnectionPlots {
 
           if ((keyStats as OutboundTrackStats).outboundRtp) {
             const rtp = (keyStats as OutboundTrackStats).outboundRtp
-            this.updatePlot(timestamp, key, 'outbound', rtp)
+            this.updateRtpPlot(timestamp, key, 'outbound', rtp)
           }
 
           if ((keyStats as InboundTrackStats).inboundRtp) {
             const rtp = (keyStats as InboundTrackStats).inboundRtp
-            this.updatePlot(timestamp, key, 'inbound', rtp)
+            this.updateRtpPlot(timestamp, key, 'inbound', rtp)
           }
+        }
+      }
+
+      const websocketStats = collectWebSocketStats()
+      for (const stat of websocketStats) {
+        this.getOrCreatePlot('outbound', 'websocket', 'bytes').add(`ws_${stat.id}`, timestamp, stat.sentBytes)
+        this.getOrCreatePlot('inbound', 'websocket', 'bytes').add(`ws_${stat.id}`, timestamp, stat.recvBytes)
+        this.getOrCreatePlot('outbound', 'websocket', 'messages').add(`ws_${stat.id}`, timestamp, stat.sentMessages)
+        this.getOrCreatePlot('inbound', 'websocket', 'messages').add(`ws_${stat.id}`, timestamp, stat.recvMessages)
+        if (stat.sentBitrate && this.enabledStats.has('outbound_websocket_bitrate')) {
+          this.getOrCreatePlot('outbound', 'websocket', 'bitrate').add(`ws_${stat.id}`, timestamp, stat.sentBitrate)
+        }
+        if (stat.sentMessageRate && this.enabledStats.has('outbound_websocket_messageRate')) {
+          this.getOrCreatePlot('outbound', 'websocket', 'messageRate').add(
+            `ws_${stat.id}`,
+            timestamp,
+            stat.sentMessageRate,
+          )
+        }
+        if (stat.recvBitrate && this.enabledStats.has('inbound_websocket_bitrate')) {
+          this.getOrCreatePlot('inbound', 'websocket', 'bitrate').add(`ws_${stat.id}`, timestamp, stat.recvBitrate)
+        }
+        if (stat.recvMessageRate && this.enabledStats.has('inbound_websocket_messageRate')) {
+          this.getOrCreatePlot('inbound', 'websocket', 'messageRate').add(
+            `ws_${stat.id}`,
+            timestamp,
+            stat.recvMessageRate,
+          )
         }
       }
 
@@ -936,7 +997,7 @@ export class PeerConnectionPlots {
     }
 
     const { label: directionLabel, select: selectDirection } = createLabeledSelect('Direction', ['outbound', 'inbound'])
-    const { label: kindLabel, select: selectKind } = createLabeledSelect('Kind', ['audio', 'video'])
+    const { label: kindLabel, select: selectKind } = createLabeledSelect('Kind', ['audio', 'video', 'websocket'])
 
     const statLabel = document.createElement('label')
     statLabel.append(document.createTextNode('Stat'))
@@ -946,45 +1007,52 @@ export class PeerConnectionPlots {
       const value = selectStat.value
       if (!value) return
       this.enabledStats.add(value)
-      updateStatSelect()
+      this.updateStatSelect()
       void this.update()
     })
     statLabel.appendChild(selectStat)
 
-    const updateStatSelect = () => {
-      const direction = selectDirection.value
-      const kind = selectKind.value
-      if (!direction || !kind) return
+    this.selectDirection = selectDirection
+    this.selectKind = selectKind
+    this.selectStat = selectStat
 
-      selectStat.replaceChildren()
-      const placeholder = document.createElement('option')
-      placeholder.value = ''
-      placeholder.textContent = `Add ${direction} ${kind} stat…`
-      placeholder.disabled = true
-      placeholder.selected = true
-      placeholder.style.fontStyle = 'italic'
-      selectStat.appendChild(placeholder)
-
-      const options = STAT_OPTIONS[direction as Direction][kind as Kind]
-      for (const name of options) {
-        const value = `${direction}_${kind}_${name}`
-        if (this.enabledStats.has(value)) continue
-        const option = document.createElement('option')
-        option.value = value
-        option.textContent = formatStatLabel(name)
-        selectStat.appendChild(option)
-      }
-    }
-
-    selectDirection.addEventListener('change', () => updateStatSelect())
-    selectKind.addEventListener('change', () => updateStatSelect())
-    updateStatSelect()
+    selectDirection.addEventListener('change', () => this.updateStatSelect())
+    selectKind.addEventListener('change', () => this.updateStatSelect())
 
     const div = document.createElement('div')
     div.className = 'stat-select'
     div.append(directionLabel, kindLabel, statLabel)
 
+    this.updateStatSelect()
     return div
+  }
+
+  private updateStatSelect() {
+    const { selectDirection, selectKind, selectStat } = this
+    if (!selectDirection || !selectKind || !selectStat) return
+
+    const direction = selectDirection.value
+    const kind = selectKind.value
+    if (!direction || !kind) return
+
+    selectStat.replaceChildren()
+    const placeholder = document.createElement('option')
+    placeholder.value = ''
+    placeholder.textContent = `Add ${direction} ${kind} stat…`
+    placeholder.disabled = true
+    placeholder.selected = true
+    placeholder.style.fontStyle = 'italic'
+    selectStat.appendChild(placeholder)
+
+    const options = STAT_OPTIONS[direction as Direction][kind as Kind]
+    for (const name of options) {
+      const value = `${direction}_${kind}_${name}`
+      if (this.enabledStats.has(value)) continue
+      const option = document.createElement('option')
+      option.value = value
+      option.textContent = formatStatLabel(name)
+      selectStat.appendChild(option)
+    }
   }
 
   private makeMovable(handle: HTMLElement) {
@@ -1024,7 +1092,7 @@ export class PeerConnectionPlots {
  * @param options.container - Optional host element; if omitted, plots are shown in a movable overlay on `document.body`
  * @param options.enabledStats - The stats to enable (default: {@link DEFAULT_ENABLED_STATS})
  */
-export function plotPeerConnectionStats({
+export function startPlots({
   intervalMs,
   container,
   enabledStats,
@@ -1039,6 +1107,6 @@ export function plotPeerConnectionStats({
 /**
  * Stop plotting peer connection stats
  */
-export function stopPlottingPeerConnectionStats() {
+export function stopPlots() {
   PeerConnectionPlots.stop()
 }

@@ -303,8 +303,7 @@ function isReceiverDisplayTrack(track: MediaStreamTrack) {
 
 export const overrides = {
   trackApplyConstraints: null as
-    | ((track: MediaStreamTrack, constraints?: MediaTrackConstraints) => MediaTrackConstraints)
-    | null,
+    ((track: MediaStreamTrack, constraints?: MediaTrackConstraints) => MediaTrackConstraints) | null,
   getUserMedia: null as ((constraints?: MediaStreamConstraints) => MediaStreamConstraints) | null,
   getUserMediaStream: null as ((stream: MediaStream) => MediaStream) | null,
   getDisplayMedia: null as ((constraints?: MediaStreamConstraints) => MediaStreamConstraints) | null,

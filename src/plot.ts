@@ -651,7 +651,7 @@ export class PeerConnectionPlots {
     // Title
     const title = document.createElement('span')
     title.className = 'title'
-    title.textContent = `${container ? '' : '⋮⋮ '}Plots`
+    title.textContent = `${container ? '' : '⋮⋮ '}webrtcperf-js`
     handle.append(title)
 
     // Link

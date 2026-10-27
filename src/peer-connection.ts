@@ -607,6 +607,6 @@ function handleDataChannel(id: number, dataChannel: RTCDataChannel) {
     log(`RTCPeerConnection-${id} dataChannel error`, event)
   })
   dataChannel.addEventListener('close', (event) => {
-    log(`RTCPeerConnection-${id} dataChannel close`, event)
+    log(`RTCPeerConnection-${id} dataChannel close`, event.target)
   })
 }

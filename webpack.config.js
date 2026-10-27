@@ -42,7 +42,7 @@ Object.defineProperty(g, 'webrtcperf', {
   output: {
     filename: 'webrtcperf.js',
     path: path.resolve(__dirname, 'dist'),
-    library: 'webrtcperf',
-    libraryTarget: 'umd',
+    library: { name: 'webrtcperf', type: 'window' },
+    globalObject: 'globalThis',
   },
 };

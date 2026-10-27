@@ -90,6 +90,7 @@ window.WebSocket = WebSocketExt
 export const websockets = new Map<number, WebSocketExt>()
 
 type WebSocketStats = WebSocketData & {
+  url: string
   sentBitrate?: number
   sentMessageRate?: number
   lastSentTime: number
@@ -111,6 +112,7 @@ export function collectWebSocketStats() {
     const data = websocket.__webrtcperf_data
     const prevStats = websocketStats.get(id)
     const stats = {
+      url: new URL(websocket.url).origin,
       ...data,
       sentBitrate: prevStats
         ? averageFromTotal(8 * data.sentBytes, 8 * prevStats.sentBytes, now, prevStats.lastSentTime)

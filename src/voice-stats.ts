@@ -51,7 +51,9 @@ export async function detectVoiceActivity({
       },
     })
     vad.start()
-    cleanup = () => vad.destroy()
+    cleanup = () => {
+      vad.destroy().catch(() => {})
+    }
   } else {
     const audioCtx = new AudioContext({
       sampleRate: 48000,

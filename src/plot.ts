@@ -199,6 +199,7 @@ const getStyles = (container?: HTMLElement) => `
 }
 
 .options,
+.pause,
 .pip {
   cursor: pointer;
   border: 1px solid #555;
@@ -468,7 +469,10 @@ class Plot {
                 return typeof x === 'number' ? new Date(x).toLocaleTimeString() : ''
               },
               label: (item) => {
-                const name = (item.dataset.label ?? '').slice(0, 10)
+                let name = item.dataset.label ?? ''
+                if (name.length > 64) {
+                  name = name.slice(0, 64) + '…'
+                }
                 const value = item.parsed.y
                 const formatted = formatValue(statName, value)
                 return `${name}: ${formatted}`
@@ -584,6 +588,14 @@ const DEFAULT_ENABLED_STATS = [
   'inbound_video_bitrate',
   'inbound_video_packetsLossRate',
   'inbound_video_jitterBuffer',
+  'outbound_websocket_bitrate',
+  'outbound_websocket_messageRate',
+  'outbound_websocket_bytes',
+  'outbound_websocket_messages',
+  'inbound_websocket_bitrate',
+  'inbound_websocket_messageRate',
+  'inbound_websocket_bytes',
+  'inbound_websocket_messages',
 ]
 
 /**
@@ -603,10 +615,12 @@ export class PeerConnectionPlots {
   private readonly plots = new Map<string, Plot>()
   private timer: ReturnType<typeof setTimeout> | null = null
   private running = false
+  private paused = false
   private updateInProgress = false
   private maxAgeMs = MAX_AGE_MS
   private pipWindow: Window | null = null
   private pipButton: HTMLButtonElement | null = null
+  private pauseButton: HTMLButtonElement | null = null
   private hostParent: Node | null = null
   private selectDirection: HTMLSelectElement | null = null
   private selectKind: HTMLSelectElement | null = null
@@ -668,6 +682,18 @@ export class PeerConnectionPlots {
     menu.appendChild(done)
     form.appendChild(menu)
     dialog.append(dialogTitle, form)
+
+    this.pauseButton = document.createElement('button')
+    this.pauseButton.type = 'button'
+    this.pauseButton.className = 'pause'
+    this.pauseButton.textContent = '⏸'
+    this.pauseButton.title = 'Pause'
+    this.pauseButton.addEventListener('mousedown', (e) => e.stopPropagation())
+    this.pauseButton.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.togglePause()
+    })
+    handle.append(this.pauseButton)
 
     const options = document.createElement('button')
     options.type = 'button'
@@ -753,18 +779,14 @@ export class PeerConnectionPlots {
   private start() {
     if (this.timer || this.running) return
     this.running = true
-    const scheduleUpdate = async () => {
-      if (!this.running) return
-      await this.update()
-      if (this.running) {
-        this.timer = setTimeout(scheduleUpdate, this.intervalMs)
-      }
-    }
-    scheduleUpdate()
+    this.paused = false
+    this.updatePauseButton()
+    void this.runUpdateLoop()
   }
 
   private stop() {
     this.running = false
+    this.paused = false
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
@@ -776,6 +798,33 @@ export class PeerConnectionPlots {
     this.plots.clear()
     this.host.remove()
     PeerConnectionPlots.instance = null
+  }
+
+  private togglePause() {
+    this.paused = !this.paused
+    this.updatePauseButton()
+    if (this.paused) {
+      if (this.timer) {
+        clearTimeout(this.timer)
+        this.timer = null
+      }
+    } else if (this.running && !this.timer) {
+      void this.runUpdateLoop()
+    }
+  }
+
+  private updatePauseButton() {
+    if (!this.pauseButton) return
+    this.pauseButton.textContent = this.paused ? '▶' : '⏸'
+    this.pauseButton.title = this.paused ? 'Resume' : 'Pause'
+  }
+
+  private async runUpdateLoop() {
+    if (!this.running) return
+    await this.update()
+    if (this.running && !this.paused) {
+      this.timer = setTimeout(() => void this.runUpdateLoop(), this.intervalMs)
+    }
   }
 
   private async togglePictureInPicture() {
@@ -908,29 +957,22 @@ export class PeerConnectionPlots {
 
       const websocketStats = collectWebSocketStats()
       for (const stat of websocketStats) {
-        this.getOrCreatePlot('outbound', 'websocket', 'bytes').add(`ws_${stat.id}`, timestamp, stat.sentBytes)
-        this.getOrCreatePlot('inbound', 'websocket', 'bytes').add(`ws_${stat.id}`, timestamp, stat.recvBytes)
-        this.getOrCreatePlot('outbound', 'websocket', 'messages').add(`ws_${stat.id}`, timestamp, stat.sentMessages)
-        this.getOrCreatePlot('inbound', 'websocket', 'messages').add(`ws_${stat.id}`, timestamp, stat.recvMessages)
+        const key = `${stat.id}:${stat.url}`
+        this.getOrCreatePlot('outbound', 'websocket', 'bytes').add(key, timestamp, stat.sentBytes)
+        this.getOrCreatePlot('inbound', 'websocket', 'bytes').add(key, timestamp, stat.recvBytes)
+        this.getOrCreatePlot('outbound', 'websocket', 'messages').add(key, timestamp, stat.sentMessages)
+        this.getOrCreatePlot('inbound', 'websocket', 'messages').add(key, timestamp, stat.recvMessages)
         if (stat.sentBitrate && this.enabledStats.has('outbound_websocket_bitrate')) {
-          this.getOrCreatePlot('outbound', 'websocket', 'bitrate').add(`ws_${stat.id}`, timestamp, stat.sentBitrate)
+          this.getOrCreatePlot('outbound', 'websocket', 'bitrate').add(key, timestamp, stat.sentBitrate)
         }
         if (stat.sentMessageRate && this.enabledStats.has('outbound_websocket_messageRate')) {
-          this.getOrCreatePlot('outbound', 'websocket', 'messageRate').add(
-            `ws_${stat.id}`,
-            timestamp,
-            stat.sentMessageRate,
-          )
+          this.getOrCreatePlot('outbound', 'websocket', 'messageRate').add(key, timestamp, stat.sentMessageRate)
         }
         if (stat.recvBitrate && this.enabledStats.has('inbound_websocket_bitrate')) {
-          this.getOrCreatePlot('inbound', 'websocket', 'bitrate').add(`ws_${stat.id}`, timestamp, stat.recvBitrate)
+          this.getOrCreatePlot('inbound', 'websocket', 'bitrate').add(key, timestamp, stat.recvBitrate)
         }
         if (stat.recvMessageRate && this.enabledStats.has('inbound_websocket_messageRate')) {
-          this.getOrCreatePlot('inbound', 'websocket', 'messageRate').add(
-            `ws_${stat.id}`,
-            timestamp,
-            stat.recvMessageRate,
-          )
+          this.getOrCreatePlot('inbound', 'websocket', 'messageRate').add(key, timestamp, stat.recvMessageRate)
         }
       }
 

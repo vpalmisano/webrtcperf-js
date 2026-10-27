@@ -158,7 +158,11 @@ export const params = {
   /**
    * It set, it will debug the encoded insertable streams.
    */
-  debugInsertableStreams: false,
+  debugInsertableStreams: false as EnableValue,
+  /**
+   * It set, it will debug the data channels.
+   */
+  dataChannelsDebug: false as EnableValue,
   /**
    * It set, the peer connection will run with additional debug logs.
    */

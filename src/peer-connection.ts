@@ -258,6 +258,11 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
       handleTransceiverForJitterBufferTarget(id, transceiver, 'track')
     })
 
+    this.addEventListener('datachannel', (event) => {
+      const { channel } = event
+      handleDataChannel(id, channel)
+    })
+
     window.dispatchEvent(
       new CustomEvent('webrtcperf:peerconnectioncreated', {
         bubbles: true,
@@ -402,6 +407,13 @@ window.RTCPeerConnection = class extends RTCPeerConnection {
       encodedInsertableStreams: this.encodedInsertableStreams,
     } as RTCConfiguration)
   }
+
+  createDataChannel(label: string, options?: RTCDataChannelInit) {
+    this.debug(`createDataChannel`, label, options)
+    const dataChannel = super.createDataChannel(label, options)
+    handleDataChannel(this.id, dataChannel)
+    return dataChannel
+  }
 }
 
 // Override codecs.
@@ -514,55 +526,27 @@ export function setTransceiversTracks(
   }
 }
 
-// Insertable streams debug.
-/* const scriptTransformWorkerFn = () => {
-  self.onrtctransform = (event: RtcTranformEvent) => {
-    const { readable, writable, options } = event.transformer
-    const debug = (...args: unknown[]) =>
-      console.log.apply(null, [`[webrtcperf-script-transform-worker] [${options.name}]`, ...args])
-    const transform = new TransformStream({
-      start() {
-        debug('start')
-      },
-      flush() {
-        debug('flush')
-      },
-      async transform(encodedFrame, controller) {
-        debug(
-          `transform frame type: ${encodedFrame.type}, timestamp: ${encodedFrame.timestamp}, duration: ${encodedFrame.duration}, length: ${encodedFrame.data.byteLength}`,
-          encodedFrame,
-        )
-        controller.enqueue(encodedFrame)
-      },
-    })
-    readable.pipeThrough(transform).pipeTo(writable)
-  }
+type RTCEncodedStreams = { readable: ReadableStream; writable: WritableStream }
+
+type RTCRtpSenderWithEncodedStreams = RTCRtpSender & {
+  _encodedStreams?: RTCEncodedStreams
+  createEncodedStreams(): RTCEncodedStreams
 }
-const worker = createWorker(scriptTransformWorkerFn) */
+
+type RTCRtpReceiverWithEncodedStreams = RTCRtpReceiver & {
+  _encodedStreams?: RTCEncodedStreams
+  createEncodedStreams(): RTCEncodedStreams
+}
 
 function handleTransceiverForInsertableStreams(id: number, transceiver: RTCRtpTransceiver) {
   if (!enabledForSession(params.debugInsertableStreams)) return
   log(`RTCPeerConnection-${id} handleTransceiverForInsertableStreams ${transceiver.direction}`)
-  /* if (transceiver.sender && !transceiver.sender.transform) {
-    transceiver.sender.transform = new RTCRtpScriptTransform(worker, {
-      name: 'sender',
-      kind: transceiver.sender.track?.kind,
-    })
+  const { sender, receiver } = transceiver as unknown as {
+    sender: RTCRtpSenderWithEncodedStreams
+    receiver: RTCRtpReceiverWithEncodedStreams
   }
-  if (transceiver.receiver && !transceiver.receiver.transform) {
-    transceiver.receiver.transform = new RTCRtpScriptTransform(worker, {
-      name: 'receiver',
-      kind: transceiver.receiver.track?.kind,
-    })
-  } */
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { sender, receiver } = transceiver as any
-
-  const handleEncodedStreams = (
-    { readable, writable }: { readable: ReadableStream; writable: WritableStream },
-    direction: string,
-  ) => {
+  const handleEncodedStreams = ({ readable, writable }: RTCEncodedStreams, direction: string) => {
     const transform = new TransformStream({
       async transform(encodedFrame: RTCEncodedVideoFrame, controller: TransformStreamDefaultController) {
         const { type, timestamp, data } = encodedFrame
@@ -588,4 +572,41 @@ function handleTransceiverForInsertableStreams(id: number, transceiver: RTCRtpTr
     receiver._encodedStreams = receiver.createEncodedStreams()
     handleEncodedStreams(receiver._encodedStreams, 'recv')
   }
+}
+
+function getSize(data: string | Blob | ArrayBuffer | ArrayBufferView) {
+  return data instanceof Blob
+    ? data.size
+    : data instanceof ArrayBuffer
+      ? data.byteLength
+      : typeof data === 'string'
+        ? data.length
+        : (data.byteLength ?? 0)
+}
+
+function handleDataChannel(id: number, dataChannel: RTCDataChannel) {
+  if (!enabledForSession(params.dataChannelsDebug)) return
+  log(
+    `RTCPeerConnection-${id} handleDataChannel id: ${dataChannel.id}, label: ${dataChannel.label}, negotiated: ${dataChannel.negotiated}, readyState: ${dataChannel.readyState}`,
+  )
+  const send = dataChannel.send.bind(dataChannel) as (data: string | Blob | ArrayBuffer | ArrayBufferView) => void
+  dataChannel.send = ((data: string | Blob | ArrayBuffer | ArrayBufferView) => {
+    const size = getSize(data)
+    log(`RTCPeerConnection-${id} dataChannel send`, size)
+    return send(data)
+  }) as typeof dataChannel.send
+  dataChannel.addEventListener('open', () => {
+    log(`RTCPeerConnection-${id} dataChannel open ${dataChannel.label} readyState=${dataChannel.readyState}`)
+  })
+  dataChannel.addEventListener('message', (event) => {
+    const { data } = event
+    const size = getSize(data)
+    log(`RTCPeerConnection-${id} dataChannel message`, size)
+  })
+  dataChannel.addEventListener('error', (event) => {
+    log(`RTCPeerConnection-${id} dataChannel error`, event)
+  })
+  dataChannel.addEventListener('close', (event) => {
+    log(`RTCPeerConnection-${id} dataChannel close`, event)
+  })
 }

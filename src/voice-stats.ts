@@ -217,7 +217,7 @@ export async function estimateQuestionAnswerDelay({
       if (event === 'start') {
         if (currentTurn?.phase === 'answer-start') {
           currentTurn.phase = 'answer-interrupted'
-          currentTurn.answerInterruptedAt = Date.now()
+          currentTurn.answerInterruptedAt = startTime
         }
         previousTurn = currentTurn
         currentTurn = {
@@ -252,7 +252,9 @@ export async function estimateQuestionAnswerDelay({
       } else if (event === 'stop') {
         if (previousTurn?.phase === 'answer-interrupted') {
           previousTurn.answerEndTime = stopTime
-          previousTurn.answerTalkingAfterInterruption = Date.now() - previousTurn.answerInterruptedAt!
+          if (previousTurn.answerInterruptedAt) {
+            previousTurn.answerTalkingAfterInterruption = Math.max(0, stopTime - previousTurn.answerInterruptedAt)
+          }
           callback?.(previousTurn)
           previousTurn = undefined
         }

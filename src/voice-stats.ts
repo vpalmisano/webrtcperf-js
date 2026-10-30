@@ -42,7 +42,7 @@ export async function detectVoiceActivity({
       pauseStream: async () => {}, // don't stop the track
       resumeStream: async () => new MediaStream([track]),
       onSpeechStart: () => {
-        speechStartTime = Date.now()
+        speechStartTime = Date.now() - minTalkingDurationMs
         callback?.('start', speechStartTime, 0)
       },
       onSpeechEnd: () => {
@@ -91,7 +91,7 @@ export async function detectVoiceActivity({
               analyser.getFloatTimeDomainData(dataArray)
               const max = Math.max(...dataArray)
               const now = Date.now()
-              if (max > 0.1) {
+              if (max > 0.001) {
                 silentDuration = 0
                 silentStartedAt = 0
                 if (!startTime) {

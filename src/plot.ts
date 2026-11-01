@@ -8,6 +8,7 @@ import {
 } from './peer-connection-stats'
 import { log } from './common'
 import { collectWebSocketStats } from './websocket'
+import { collectQuestionAnswerDelay } from './voice-stats'
 
 const MAX_AGE_MS = 5 * 60 * 1000
 const PLOT_WIDTH = 280
@@ -76,7 +77,7 @@ const STAT_OPTIONS = {
       'totalRoundTripTime',
       'transportRoundTripTime',
     ] as (keyof OutboundRtpStats)[],
-    websocket: ['bitrate'],
+    websocket: ['bitrate', 'messageRate', 'bytes', 'messages'],
   },
   inbound: {
     audio: [
@@ -109,6 +110,7 @@ const STAT_OPTIONS = {
       'transportResponsesReceived',
       'transportRoundTripTime',
       'transportTotalRoundTripTime',
+      'questionAnswerDelay',
     ] as (keyof InboundRtpStats)[],
     video: [
       'availableIncomingBitrate',
@@ -149,7 +151,7 @@ const STAT_OPTIONS = {
       'transportRoundTripTime',
       'transportTotalRoundTripTime',
     ] as (keyof InboundRtpStats)[],
-    websocket: ['bitrate'],
+    websocket: ['bitrate', 'messageRate', 'bytes', 'messages'],
   },
 } as const
 
@@ -470,8 +472,8 @@ class Plot {
               },
               label: (item) => {
                 let name = item.dataset.label ?? ''
-                if (name.length > 64) {
-                  name = name.slice(0, 64) + '…'
+                if (name.length > 32) {
+                  name = name.slice(0, 31) + '…'
                 }
                 const value = item.parsed.y
                 const formatted = formatValue(statName, value)
@@ -596,6 +598,7 @@ const DEFAULT_ENABLED_STATS = [
   'inbound_websocket_messageRate',
   'inbound_websocket_bytes',
   'inbound_websocket_messages',
+  'inbound_audio_questionAnswerDelay',
 ]
 
 /**
@@ -776,6 +779,21 @@ export class PeerConnectionPlots {
     PeerConnectionPlots.instance?.stop()
   }
 
+  /** Pauses updates. */
+  static pause() {
+    PeerConnectionPlots.instance?.pause()
+  }
+
+  /** Resumes updates. */
+  static unpause() {
+    PeerConnectionPlots.instance?.unpause()
+  }
+
+  /** Clears plots. */
+  static clear() {
+    PeerConnectionPlots.instance?.clear()
+  }
+
   private start() {
     if (this.timer || this.running) return
     this.running = true
@@ -800,16 +818,35 @@ export class PeerConnectionPlots {
     PeerConnectionPlots.instance = null
   }
 
-  private togglePause() {
-    this.paused = !this.paused
+  private clear() {
+    for (const plot of [...this.plots.values()]) {
+      plot.clear()
+    }
+    this.plots.clear()
+  }
+
+  private pause() {
+    if (this.paused) return
+    this.paused = true
     this.updatePauseButton()
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+  }
+
+  private unpause() {
+    if (!this.paused) return
+    this.paused = false
+    this.updatePauseButton()
+    void this.runUpdateLoop()
+  }
+
+  private togglePause() {
     if (this.paused) {
-      if (this.timer) {
-        clearTimeout(this.timer)
-        this.timer = null
-      }
-    } else if (this.running && !this.timer) {
-      void this.runUpdateLoop()
+      this.unpause()
+    } else {
+      this.pause()
     }
   }
 
@@ -974,6 +1011,15 @@ export class PeerConnectionPlots {
         if (stat.recvMessageRate && this.enabledStats.has('inbound_websocket_messageRate')) {
           this.getOrCreatePlot('inbound', 'websocket', 'messageRate').add(key, timestamp, stat.recvMessageRate)
         }
+      }
+
+      const questionAnswerDelay = collectQuestionAnswerDelay()
+      if (questionAnswerDelay && this.enabledStats.has('inbound_audio_questionAnswerDelay')) {
+        this.getOrCreatePlot('inbound', 'audio', 'questionAnswerDelay').add(
+          'questionAnswerDelay',
+          timestamp,
+          questionAnswerDelay,
+        )
       }
 
       const xMin = timestamp - this.maxAgeMs
@@ -1146,9 +1192,22 @@ export function startPlots({
   PeerConnectionPlots.start({ intervalMs, container, enabledStats })
 }
 
-/**
- * Stop plotting peer connection stats
- */
+/** Stop plotting peer connection stats.  */
 export function stopPlots() {
   PeerConnectionPlots.stop()
+}
+
+/** Pauses plots updates. */
+export function pausePlots() {
+  PeerConnectionPlots.pause()
+}
+
+/** Resumes plots updates. */
+export function unpausePlots() {
+  PeerConnectionPlots.unpause()
+}
+
+/** Clears plots. */
+export function clearPlots() {
+  PeerConnectionPlots.clear()
 }

@@ -91,9 +91,15 @@ Join a voice session, then measure the delay between the local question (send au
 const sendTrack = await webrtcperf.getTransceiversTrack('send', 'audio')
 const recvTrack = await webrtcperf.getTransceiversTrack('recv', 'audio')
 
-const stop = webrtcperf.estimateQuestionAnswerDelay(sendTrack, recvTrack, 40, 500, (turn) => {
-  console.log(turn.phase, turn)
-  // turn.phase: 'question-start' | 'question-end' | 'answer-start' | 'answer-end' | 'answer-interrupted'
+const stop = await webrtcperf.estimateQuestionAnswerDelay({
+  sendTrack,
+  recvTrack,
+  minTalkingDurationMs: 40,
+  minSilentDurationMs: 500,
+  callback: (turn) => {
+    console.log(turn.phase, turn)
+    // turn.phase: 'question-start' | 'question-end' | 'answer-start' | 'answer-end' | 'answer-interrupted'
+  },
 })
 
 // Mean question→answer delay (seconds):

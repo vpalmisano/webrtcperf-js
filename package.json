@@ -13,7 +13,7 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "version": "1.9.2",
+  "version": "1.10.0",
   "main": "dist/webrtcperf.js",
   "module": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",
@@ -33,6 +33,7 @@
     "@ricky0123/vad-web": "^0.0.31",
     "@vpalmisano/ggwave": "0.4.3-2",
     "chart.js": "^4.6.1",
+    "events": "^3.3.0",
     "sdp-transform": "^2.15.0",
     "worker-timers": "^8.0.34"
   },

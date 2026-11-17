@@ -8,6 +8,7 @@ import {
 } from './peer-connection-stats'
 import { log } from './common'
 import { collectWebSocketStats } from './websocket'
+import { collectWebTransportStats } from './webtransport'
 import { collectQuestionAnswerDelay } from './voice-stats'
 
 const MAX_AGE_MS = 5 * 60 * 1000
@@ -18,15 +19,17 @@ const CLOSE_BUTTON_SIZE = 14
 
 type Point = { x: number; y: number }
 type Direction = 'outbound' | 'inbound'
-type Kind = 'audio' | 'video' | 'websocket'
+type Kind = 'audio' | 'video' | 'websocket' | 'webtransport'
 
 const GROUP_ORDER: Record<string, number> = {
   outbound_audio: 0,
   outbound_video: 1,
   outbound_websocket: 2,
-  inbound_audio: 2,
-  inbound_video: 3,
-  inbound_websocket: 4,
+  outbound_webtransport: 3,
+  inbound_audio: 4,
+  inbound_video: 5,
+  inbound_websocket: 6,
+  inbound_webtransport: 7,
 }
 
 const STAT_OPTIONS = {
@@ -78,6 +81,7 @@ const STAT_OPTIONS = {
       'transportRoundTripTime',
     ] as (keyof OutboundRtpStats)[],
     websocket: ['bitrate', 'messageRate', 'bytes', 'messages'],
+    webtransport: ['bitrate', 'messageRate', 'bytes', 'messages'],
   },
   inbound: {
     audio: [
@@ -152,6 +156,7 @@ const STAT_OPTIONS = {
       'transportTotalRoundTripTime',
     ] as (keyof InboundRtpStats)[],
     websocket: ['bitrate', 'messageRate', 'bytes', 'messages'],
+    webtransport: ['bitrate', 'messageRate', 'bytes', 'messages'],
   },
 } as const
 
@@ -598,6 +603,14 @@ const DEFAULT_ENABLED_STATS = [
   'inbound_websocket_messageRate',
   'inbound_websocket_bytes',
   'inbound_websocket_messages',
+  'outbound_webtransport_bitrate',
+  'outbound_webtransport_messageRate',
+  'outbound_webtransport_bytes',
+  'outbound_webtransport_messages',
+  'inbound_webtransport_bitrate',
+  'inbound_webtransport_messageRate',
+  'inbound_webtransport_bytes',
+  'inbound_webtransport_messages',
   'inbound_audio_questionAnswerDelay',
 ]
 
@@ -992,6 +1005,27 @@ export class PeerConnectionPlots {
         }
       }
 
+      const webtransportStats = await collectWebTransportStats()
+      for (const stat of webtransportStats) {
+        const key = `${stat.id}:${stat.url}`
+        this.getOrCreatePlot('outbound', 'webtransport', 'bytes').add(key, timestamp, stat.sentBytes)
+        this.getOrCreatePlot('inbound', 'webtransport', 'bytes').add(key, timestamp, stat.recvBytes)
+        this.getOrCreatePlot('outbound', 'webtransport', 'messages').add(key, timestamp, stat.sentMessages)
+        this.getOrCreatePlot('inbound', 'webtransport', 'messages').add(key, timestamp, stat.recvMessages)
+        if (stat.sentBitrate && this.enabledStats.has('outbound_webtransport_bitrate')) {
+          this.getOrCreatePlot('outbound', 'webtransport', 'bitrate').add(key, timestamp, stat.sentBitrate)
+        }
+        if (stat.sentMessageRate && this.enabledStats.has('outbound_webtransport_messageRate')) {
+          this.getOrCreatePlot('outbound', 'webtransport', 'messageRate').add(key, timestamp, stat.sentMessageRate)
+        }
+        if (stat.recvBitrate && this.enabledStats.has('inbound_webtransport_bitrate')) {
+          this.getOrCreatePlot('inbound', 'webtransport', 'bitrate').add(key, timestamp, stat.recvBitrate)
+        }
+        if (stat.recvMessageRate && this.enabledStats.has('inbound_webtransport_messageRate')) {
+          this.getOrCreatePlot('inbound', 'webtransport', 'messageRate').add(key, timestamp, stat.recvMessageRate)
+        }
+      }
+
       const websocketStats = collectWebSocketStats()
       for (const stat of websocketStats) {
         const key = `${stat.id}:${stat.url}`
@@ -1085,7 +1119,12 @@ export class PeerConnectionPlots {
     }
 
     const { label: directionLabel, select: selectDirection } = createLabeledSelect('Direction', ['outbound', 'inbound'])
-    const { label: kindLabel, select: selectKind } = createLabeledSelect('Kind', ['audio', 'video', 'websocket'])
+    const { label: kindLabel, select: selectKind } = createLabeledSelect('Kind', [
+      'audio',
+      'video',
+      'websocket',
+      'webtransport',
+    ])
 
     const statLabel = document.createElement('label')
     statLabel.append(document.createTextNode('Stat'))

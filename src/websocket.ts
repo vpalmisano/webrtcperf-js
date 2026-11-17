@@ -14,6 +14,7 @@ const websocketConnectionDelayStats = new MeasuredStats({ ttl: 30 })
 
 type WebSocketData = {
   id: number
+  url: string
   startTime: number
   connectionDelay: number
   sentBytes: number
@@ -32,6 +33,7 @@ class WebSocketExt extends WebSocket {
     log(`WebSocket-${id} constructor, url: ${url}`)
     const data = (this.__webrtcperf_data = {
       id,
+      url: new URL(url).origin,
       startTime: Date.now(),
       connectionDelay: 0,
       sentBytes: 0,
@@ -90,13 +92,11 @@ window.WebSocket = WebSocketExt
 export const websockets = new Map<number, WebSocketExt>()
 
 type WebSocketStats = WebSocketData & {
-  url: string
   sentBitrate?: number
   sentMessageRate?: number
-  lastSentTime: number
   recvBitrate?: number
   recvMessageRate?: number
-  lastRecvTime: number
+  timestamp: number
 }
 
 const websocketStats = new Map<number, WebSocketStats>()
@@ -112,22 +112,20 @@ export function collectWebSocketStats() {
     const data = websocket.__webrtcperf_data
     const prevStats = websocketStats.get(id)
     const stats = {
-      url: new URL(websocket.url).origin,
       ...data,
       sentBitrate: prevStats
-        ? averageFromTotal(8 * data.sentBytes, 8 * prevStats.sentBytes, now, prevStats.lastSentTime)
+        ? averageFromTotal(8 * data.sentBytes, 8 * prevStats.sentBytes, now, prevStats.timestamp)
         : undefined,
       sentMessageRate: prevStats
-        ? averageFromTotal(data.sentMessages, prevStats.sentMessages, now, prevStats.lastSentTime)
+        ? averageFromTotal(data.sentMessages, prevStats.sentMessages, now, prevStats.timestamp)
         : undefined,
-      lastSentTime: now,
       recvBitrate: prevStats
-        ? averageFromTotal(8 * data.recvBytes, 8 * prevStats.recvBytes, now, prevStats.lastSentTime)
+        ? averageFromTotal(8 * data.recvBytes, 8 * prevStats.recvBytes, now, prevStats.timestamp)
         : undefined,
       recvMessageRate: prevStats
-        ? averageFromTotal(data.recvMessages, prevStats.recvMessages, now, prevStats.lastSentTime)
+        ? averageFromTotal(data.recvMessages, prevStats.recvMessages, now, prevStats.timestamp)
         : undefined,
-      lastRecvTime: now,
+      timestamp: now,
     }
     websocketStats.set(id, stats)
     inactive.delete(id)
